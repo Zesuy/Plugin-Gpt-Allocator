@@ -73,6 +73,7 @@ PUT  /v0/management/plugins/cpa-route-allocator/settings
 GET  /v0/management/plugins/cpa-route-allocator/groups
 POST /v0/management/plugins/cpa-route-allocator/groups
 PUT  /v0/management/plugins/cpa-route-allocator/groups
+PUT  /v0/management/plugins/cpa-route-allocator/groups/order
 DELETE /v0/management/plugins/cpa-route-allocator/groups
 GET  /v0/management/plugins/cpa-route-allocator/route-slots
 POST /v0/management/plugins/cpa-route-allocator/route-slots

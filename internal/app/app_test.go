@@ -351,6 +351,41 @@ func TestManagementCRUDAndAdoptLocalCredential(t *testing.T) {
 	}
 }
 
+func TestGroupOrderCanBeReordered(t *testing.T) {
+	application := New(state.New(filepath.Join(t.TempDir(), "state.json")), fakeHost{})
+	for _, name := range []string{"alpha", "beta", "gamma"} {
+		response := callManagement(t, application, http.MethodPost, managementPrefix+"/groups", map[string]any{
+			"name": name, "priority": 10, "listener_pool": "default", "shortage_policy": "reject",
+		})
+		if response.StatusCode != http.StatusCreated {
+			t.Fatalf("create group %q status = %d body=%s", name, response.StatusCode, response.Body)
+		}
+	}
+	response := callManagement(t, application, http.MethodPut, managementPrefix+"/groups/order", map[string]any{
+		"names": []string{"gamma", "alpha", "beta"},
+	})
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("reorder groups status = %d body=%s", response.StatusCode, response.Body)
+	}
+	var got struct {
+		Groups []struct {
+			Name string `json:"name"`
+		} `json:"groups"`
+	}
+	if err := json.Unmarshal(response.Body, &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Groups) != 3 || got.Groups[0].Name != "gamma" || got.Groups[1].Name != "alpha" || got.Groups[2].Name != "beta" {
+		t.Fatalf("unexpected group order: %#v", got.Groups)
+	}
+	response = callManagement(t, application, http.MethodPut, managementPrefix+"/groups/order", map[string]any{
+		"names": []string{"gamma", "gamma", "beta"},
+	})
+	if response.StatusCode != http.StatusBadRequest {
+		t.Fatalf("duplicate group order status = %d body=%s", response.StatusCode, response.Body)
+	}
+}
+
 func callManagement(t *testing.T, application *App, method, path string, body any) managementResponse {
 	t.Helper()
 	var bodyBytes []byte

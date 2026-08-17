@@ -2,7 +2,6 @@ package app
 
 import (
 	"net/http"
-	"sort"
 	"strings"
 
 	"github.com/zesuy/cpa-route-allocator/internal/model"
@@ -19,6 +18,10 @@ type groupMutationInput struct {
 
 type groupDeleteInput struct {
 	Name string `json:"name"`
+}
+
+type groupOrderInput struct {
+	Names []string `json:"names"`
 }
 
 func (a *App) getGroups() (managementResponse, error) {
@@ -44,7 +47,6 @@ func (a *App) createGroup(body []byte) (managementResponse, error) {
 			return conflictError("group already exists")
 		}
 		value.Groups = append(value.Groups, group)
-		sortGroups(value.Groups)
 		return nil
 	})
 	if err != nil {
@@ -93,12 +95,51 @@ func (a *App) putGroup(body []byte) (managementResponse, error) {
 			working.Credentials[index].Group = group.Name
 		}
 	}
-	sortGroups(working.Groups)
 	if err := a.persistGroupManagedFields(working, group.Name); err != nil {
 		return managementResponse{}, err
 	}
 	updated, err := a.store.Update(func(state *model.State) error {
 		*state = working
+		return nil
+	})
+	if err != nil {
+		return managementResponse{}, err
+	}
+	return jsonResponse(http.StatusOK, updated.Public()), nil
+}
+
+func (a *App) reorderGroups(body []byte) (managementResponse, error) {
+	var input groupOrderInput
+	if err := decodeBody(body, &input); err != nil {
+		return managementResponse{}, err
+	}
+	updated, err := a.store.Update(func(value *model.State) error {
+		if len(input.Names) != len(value.Groups) {
+			return clientError("names must include every group exactly once")
+		}
+		byName := make(map[string]model.Group, len(value.Groups))
+		for _, group := range value.Groups {
+			byName[strings.ToLower(group.Name)] = group
+		}
+		ordered := make([]model.Group, 0, len(input.Names))
+		seen := make(map[string]struct{}, len(input.Names))
+		for _, name := range input.Names {
+			name = strings.TrimSpace(name)
+			key := strings.ToLower(name)
+			group, ok := byName[key]
+			if !ok {
+				return clientError("names must include every existing group")
+			}
+			if _, duplicate := seen[key]; duplicate {
+				return clientError("names must not contain duplicate groups")
+			}
+			seen[key] = struct{}{}
+			ordered = append(ordered, group)
+		}
+		if len(seen) != len(byName) {
+			return clientError("names must include every existing group exactly once")
+		}
+		value.Groups = ordered
 		return nil
 	})
 	if err != nil {
@@ -161,12 +202,6 @@ func decodeGroup(body []byte) (groupMutationInput, model.Group, error) {
 		return groupMutationInput{}, model.Group{}, clientError("invalid shortage_policy")
 	}
 	return input, group, nil
-}
-
-func sortGroups(groups []model.Group) {
-	sort.Slice(groups, func(i, j int) bool {
-		return strings.ToLower(groups[i].Name) < strings.ToLower(groups[j].Name)
-	})
 }
 
 func (a *App) persistGroupManagedFields(value model.State, groupName string) error {

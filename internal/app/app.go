@@ -247,6 +247,7 @@ func managementRoutes() managementRegistration {
 			{Method: http.MethodGet, Path: "/plugins/" + PluginName + "/groups", Description: "List credential groups."},
 			{Method: http.MethodPost, Path: "/plugins/" + PluginName + "/groups", Description: "Create a credential group."},
 			{Method: http.MethodPut, Path: "/plugins/" + PluginName + "/groups", Description: "Create or update a credential group."},
+			{Method: http.MethodPut, Path: "/plugins/" + PluginName + "/groups/order", Description: "Reorder credential groups."},
 			{Method: http.MethodDelete, Path: "/plugins/" + PluginName + "/groups", Description: "Delete an unused credential group."},
 			{Method: http.MethodGet, Path: "/plugins/" + PluginName + "/route-slots", Description: "List Listener and Selector mappings."},
 			{Method: http.MethodPost, Path: "/plugins/" + PluginName + "/route-slots", Description: "Create a Listener and Selector mapping."},
@@ -294,6 +295,8 @@ func (a *App) handleManagement(raw []byte) (json.RawMessage, error) {
 		response, err = a.createGroup(req.Body)
 	case req.Method == http.MethodPut && path == managementPrefix+"/groups":
 		response, err = a.putGroup(req.Body)
+	case req.Method == http.MethodPut && path == managementPrefix+"/groups/order":
+		response, err = a.reorderGroups(req.Body)
 	case req.Method == http.MethodDelete && path == managementPrefix+"/groups":
 		response, err = a.deleteGroup(req.Body)
 	case req.Method == http.MethodGet && path == managementPrefix+"/route-slots":
