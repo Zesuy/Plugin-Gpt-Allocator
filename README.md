@@ -18,6 +18,9 @@ The plugin runs inside CLIProxyAPI. It reuses the existing CPA port and Manageme
 - imports without an available Mihomo controller are retained as `pending` instead of pretending the route is ready
 - existing CPA Auth discovery and adoption, plus safe unmanage (the Auth file is retained)
 - short toast feedback in the UI; credential and Listener edits use accessible modal dialogs
+- CPA `usage.handle` summaries split into SSE, WebSocket, other-stream, and non-stream buckets
+- Mihomo `/proxies` alive/history data exposed during route sync for node health display
+- on-demand public egress IP detection through `chatgpt.com/cdn-cgi/trace`
 
 ## Build
 
@@ -80,6 +83,8 @@ POST /v0/management/plugins/cpa-route-allocator/route-slots
 PUT  /v0/management/plugins/cpa-route-allocator/route-slots
 DELETE /v0/management/plugins/cpa-route-allocator/route-slots
 GET  /v0/management/plugins/cpa-route-allocator/mihomo/status
+GET  /v0/management/plugins/cpa-route-allocator/network/public-ip
+GET  /v0/management/plugins/cpa-route-allocator/stats
 GET  /v0/management/plugins/cpa-route-allocator/mihomo/selectors
 POST /v0/management/plugins/cpa-route-allocator/route-slots/sync
 POST /v0/management/plugins/cpa-route-allocator/route-slots/select
