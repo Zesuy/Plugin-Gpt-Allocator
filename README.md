@@ -2,6 +2,8 @@
 
 `cpa-route-allocator` is a native CLIProxyAPI plugin for importing credentials, applying group defaults, and assigning preconfigured Mihomo Listener/Selector routes.
 
+The current product and implementation baseline is recorded in [docs/product-plan.md](docs/product-plan.md). It covers the CPAMC-style credential card workbench, Listener/node diagnostics, request attribution, and manual duplicate-public-IP removal workflow.
+
 The plugin runs inside CLIProxyAPI. It reuses the existing CPA port and Management API authentication; it does not start another HTTP server.
 
 ## Current milestone
