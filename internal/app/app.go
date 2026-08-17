@@ -585,6 +585,7 @@ func (a *App) executeImport(body []byte, mode importMode) (managementResponse, e
 			reserved[strings.ToLower(credential.AuthFile)] = struct{}{}
 		}
 	}
+	externalByIdentity := a.discoverExternalIdentities(hostFiles, filesByName)
 
 	working := cloneState(current)
 	identityIndex := make(map[string]int, len(working.Credentials))
@@ -630,7 +631,16 @@ func (a *App) executeImport(body []byte, mode importMode) (managementResponse, e
 			if assignErr != nil {
 				return managementResponse{}, conflictError(assignErr.Error())
 			}
-			filename := importer.AvailableAuthFile(item.Email, item.Provider, item.Identity, reserved)
+			filename := externalByIdentity[item.Identity]
+			if filename == "" {
+				filename = importer.AvailableAuthFile(item.Email, item.Provider, item.Identity, reserved)
+			} else {
+				resultItem.Action = "adopted"
+				baseAuth, err = a.readExistingAuth(filename, filesByName)
+				if err != nil {
+					return managementResponse{}, upstreamError("read existing CPA Auth " + filename + ": " + err.Error())
+				}
+			}
 			working.Credentials = append(working.Credentials, model.Credential{
 				Identity:    item.Identity,
 				AuthFile:    filename,
@@ -647,6 +657,11 @@ func (a *App) executeImport(body []byte, mode importMode) (managementResponse, e
 			credentialIndex = len(working.Credentials) - 1
 			identityIndex[item.Identity] = credentialIndex
 			credential = &working.Credentials[credentialIndex]
+			if credential.RouteSlotID != "" {
+				if routeErr := a.prepareNewRoute(&working, credential); routeErr != nil {
+					resultItem.Warning = "route pending: " + routeErr.Error()
+				}
+			}
 			result.Imported++
 		}
 		resultItem.AuthFile = credential.AuthFile
@@ -669,6 +684,118 @@ func (a *App) executeImport(body []byte, mode importMode) (managementResponse, e
 		return managementResponse{}, err
 	}
 	return jsonResponse(http.StatusOK, result), nil
+}
+
+func (a *App) discoverExternalIdentities(files []hostAuthFileEntry, byName map[string]hostAuthFileEntry) map[string]string {
+	identities := make(map[string]string)
+	for _, file := range files {
+		if strings.TrimSpace(file.Name) == "" || strings.TrimSpace(file.AuthIndex) == "" {
+			continue
+		}
+		auth, err := a.readExistingAuth(file.Name, byName)
+		if err != nil || len(auth) == 0 {
+			continue
+		}
+		raw, err := json.Marshal(auth)
+		if err != nil {
+			continue
+		}
+		parsed, err := importer.Parse(raw)
+		if err != nil {
+			continue
+		}
+		for _, item := range parsed {
+			if _, exists := identities[item.Identity]; !exists {
+				identities[item.Identity] = file.Name
+			}
+		}
+	}
+	return identities
+}
+
+func (a *App) prepareNewRoute(value *model.State, credential *model.Credential) error {
+	var slot *model.RouteSlot
+	for index := range value.RouteSlots {
+		if value.RouteSlots[index].ID == credential.RouteSlotID {
+			slot = &value.RouteSlots[index]
+			break
+		}
+	}
+	if slot == nil {
+		credential.RouteStatus = model.RouteStatusPending
+		return errors.New("assigned route slot no longer exists")
+	}
+	client, err := mihomo.New(value.Settings.MihomoControllerURL, value.Settings.MihomoSecret, nil)
+	if err != nil {
+		credential.RouteStatus = model.RouteStatusPending
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	selector, err := client.Selector(ctx, slot.Selector)
+	if err != nil {
+		credential.RouteStatus = model.RouteStatusPending
+		return err
+	}
+	if selector.Now != "" {
+		slot.CurrentNode = selector.Now
+	}
+	if credential.RouteStatus == model.RouteStatusShared {
+		if slot.CurrentNode == "" {
+			credential.RouteStatus = model.RouteStatusPending
+			return errors.New("Selector has no current node")
+		}
+		return nil
+	}
+	node := leastUsedNode(*value, *slot, selector.All)
+	if node == "" {
+		credential.RouteStatus = model.RouteStatusPending
+		return errors.New("Selector has no usable nodes")
+	}
+	if node != selector.Now {
+		if err := client.Select(ctx, slot.Selector, node); err != nil {
+			credential.RouteStatus = model.RouteStatusPending
+			return err
+		}
+	}
+	slot.CurrentNode = node
+	return nil
+}
+
+func leastUsedNode(value model.State, slot model.RouteSlot, nodes []string) string {
+	usage := make(map[string]int)
+	for _, credential := range value.Credentials {
+		if credential.RouteSlotID == "" || credential.RouteSlotID == slot.ID {
+			continue
+		}
+		for _, candidate := range value.RouteSlots {
+			if candidate.ID == credential.RouteSlotID && candidate.CurrentNode != "" {
+				usage[candidate.CurrentNode]++
+				break
+			}
+		}
+	}
+	unique := make(map[string]struct{}, len(nodes))
+	for _, node := range nodes {
+		node = strings.TrimSpace(node)
+		if node != "" {
+			unique[node] = struct{}{}
+		}
+	}
+	ordered := make([]string, 0, len(unique))
+	for node := range unique {
+		ordered = append(ordered, node)
+	}
+	sort.Slice(ordered, func(i, j int) bool {
+		if usage[ordered[i]] != usage[ordered[j]] {
+			return usage[ordered[i]] < usage[ordered[j]]
+		}
+		return ordered[i] < ordered[j]
+	})
+	if len(ordered) == 0 {
+		return strings.TrimSpace(slot.CurrentNode)
+	}
+	return ordered[0]
 }
 
 func (a *App) listHostAuthFiles() ([]hostAuthFileEntry, error) {
@@ -731,7 +858,7 @@ func applyManagedFields(auth map[string]any, value model.State, credential model
 	if credential.WorkspaceID != "" {
 		auth["workspace_id"] = credential.WorkspaceID
 	}
-	if credential.RouteSlotID == "" || credential.RouteStatus == model.RouteStatusDefault {
+	if credential.RouteSlotID == "" || credential.RouteStatus == model.RouteStatusDefault || credential.RouteStatus == model.RouteStatusPending {
 		delete(auth, "proxy_url")
 		return
 	}

@@ -3,6 +3,7 @@ package app
 import (
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"testing"
 
@@ -115,6 +116,24 @@ func TestUploadCreatesAndAPIUpdateKeepsGroupAndRoute(t *testing.T) {
 	store := state.New(filepath.Join(t.TempDir(), "state.json"))
 	host := newRecordingHost()
 	application := New(store, host)
+	mihomoServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path == "/proxies/cpa-01" && request.Method == http.MethodGet {
+			_, _ = writer.Write([]byte(`{"name":"cpa-01","type":"Selector","now":"JP-01","all":["JP-01","SG-01"]}`))
+			return
+		}
+		if request.URL.Path == "/proxies/cpa-01" && request.Method == http.MethodPut {
+			writer.WriteHeader(http.StatusNoContent)
+			return
+		}
+		http.NotFound(writer, request)
+	}))
+	defer mihomoServer.Close()
+	response := callManagement(t, application, http.MethodPut, managementPrefix+"/settings", map[string]any{
+		"mihomo_controller_url": mihomoServer.URL,
+	})
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("settings status = %d body=%s", response.StatusCode, response.Body)
+	}
 	for _, name := range []string{"primary", "backup"} {
 		response := callManagement(t, application, http.MethodPut, managementPrefix+"/groups", map[string]any{
 			"name":            name,
@@ -127,7 +146,7 @@ func TestUploadCreatesAndAPIUpdateKeepsGroupAndRoute(t *testing.T) {
 			t.Fatalf("group status = %d body=%s", response.StatusCode, response.Body)
 		}
 	}
-	response := callManagement(t, application, http.MethodPut, managementPrefix+"/route-slots", map[string]any{
+	response = callManagement(t, application, http.MethodPut, managementPrefix+"/route-slots", map[string]any{
 		"id":           "slot-1",
 		"listener_url": "socks5://127.0.0.1:21001",
 		"selector":     "cpa-01",
@@ -174,6 +193,45 @@ func TestUploadCreatesAndAPIUpdateKeepsGroupAndRoute(t *testing.T) {
 	}
 	if host.saved["alice@example.com.json"]["access_token"] != "token-two" {
 		t.Fatalf("credential token was not updated: %#v", host.saved["alice@example.com.json"])
+	}
+}
+
+func TestUploadAdoptsExistingCPAAuthFile(t *testing.T) {
+	store := state.New(filepath.Join(t.TempDir(), "state.json"))
+	host := newRecordingHost()
+	host.saved["alice@example.com.json"] = map[string]any{
+		"type": "codex", "access_token": "old-token", "email": "alice@example.com", "account_id": "account-1",
+	}
+	application := New(store, host)
+	response := callManagement(t, application, http.MethodPut, managementPrefix+"/groups", map[string]any{
+		"name": "primary", "listener_pool": "default", "shortage_policy": "reject",
+	})
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("group status = %d body=%s", response.StatusCode, response.Body)
+	}
+	response = callManagement(t, application, http.MethodPut, managementPrefix+"/route-slots", map[string]any{
+		"id": "slot-1", "listener_url": "socks5://127.0.0.1:21001", "selector": "cpa-01", "pool": "default",
+	})
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("slot status = %d body=%s", response.StatusCode, response.Body)
+	}
+	response = callManagement(t, application, http.MethodPost, managementPrefix+"/upload", map[string]any{
+		"group": "primary", "credential": map[string]any{
+			"access_token": "new-token", "email": "alice@example.com", "account_id": "account-1",
+		},
+	})
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("upload status = %d body=%s", response.StatusCode, response.Body)
+	}
+	if host.saved["alice@example.com_1.json"] != nil || host.saved["alice@example.com.json"]["access_token"] != "new-token" {
+		t.Fatalf("existing auth was not adopted: %#v", host.saved)
+	}
+	loaded, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(loaded.Credentials) != 1 || loaded.Credentials[0].AuthFile != "alice@example.com.json" {
+		t.Fatalf("unexpected adopted state: %#v", loaded.Credentials)
 	}
 }
 

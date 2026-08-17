@@ -15,6 +15,7 @@ The plugin runs inside CLIProxyAPI. It reuses the existing CPA port and Manageme
 - CPA Auth persistence through `host.auth.save`
 - idempotent updates that keep the original group and route
 - LRU free-slot assignment plus share-least, reject, and default-route shortage policies
+- imports without an available Mihomo controller are retained as `pending` instead of pretending the route is ready
 
 Live Mihomo reconciliation and the full management UI are the next milestones.
 
