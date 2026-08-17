@@ -217,7 +217,7 @@
     el('controllerURL').value = state.settings?.mihomo_controller_url || '';
     el('groupNames').innerHTML = (state.groups || []).map(group => `<option value="${escapeHTML(group.name)}"></option>`).join('');
     el('credentialRows').innerHTML = (state.credentials || []).length ? state.credentials.map(item => `
-      <tr><td>${escapeHTML(item.alias || item.email || item.identity.slice(0, 8))}</td><td>${escapeHTML(item.group)}</td>
+      <tr><td><div class="inline"><input data-alias-for="${escapeHTML(item.identity)}" value="${escapeHTML(item.alias || '')}" placeholder="${escapeHTML(item.email || item.identity.slice(0, 8))}" aria-label="${escapeHTML(item.email || item.identity)} 的显示别名"><button type="button" data-alias-save="${escapeHTML(item.identity)}">保存</button></div></td><td><div class="inline"><select data-group-for="${escapeHTML(item.identity)}" aria-label="${escapeHTML(item.email || item.identity)} 的分组">${(state.groups || []).map(group => `<option value="${escapeHTML(group.name)}" ${group.name === item.group ? 'selected' : ''}>${escapeHTML(group.name)}</option>`).join('')}</select><button type="button" data-group-save="${escapeHTML(item.identity)}">移动</button></div></td>
       <td><code>${escapeHTML(item.route_slot_id || 'CPA 默认')}</code></td><td>${escapeHTML(item.route_status)}</td><td><code>${escapeHTML(item.auth_file)}</code></td></tr>`).join('')
       : '<tr><td colspan="5" class="empty">还没有导入凭据</td></tr>';
     renderSlots();
@@ -296,6 +296,22 @@
       if (!node) throw new Error('请输入或选择目标节点。');
       const result = await request('/route-slots/select', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({route_slot_id:id,node}) });
       show(result); await loadState();
+    });
+  });
+  el('credentialRows').addEventListener('click', event => {
+    const aliasButton = event.target.closest('[data-alias-save]');
+    const groupButton = event.target.closest('[data-group-save]');
+    if (aliasButton) run(aliasButton, async () => {
+      const identity = aliasButton.dataset.aliasSave;
+      const alias = el('credentialRows').querySelector(`[data-alias-for="${CSS.escape(identity)}"]`).value;
+      const state = await request('/credentials/alias', { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({identity, alias}) });
+      renderState(state); show('显示别名已更新。');
+    });
+    if (groupButton) run(groupButton, async () => {
+      const identity = groupButton.dataset.groupSave;
+      const group = el('credentialRows').querySelector(`[data-group-for="${CSS.escape(identity)}"]`).value;
+      const state = await request('/credentials/move', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({identity, group}) });
+      renderState(state); show('凭据已移动到新分组。');
     });
   });
   loadState();

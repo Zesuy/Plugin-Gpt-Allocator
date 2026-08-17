@@ -165,6 +165,16 @@ type selectNodeInput struct {
 	Node        string `json:"node"`
 }
 
+type aliasInput struct {
+	Identity string `json:"identity"`
+	Alias    string `json:"alias"`
+}
+
+type moveCredentialInput struct {
+	Identity string `json:"identity"`
+	Group    string `json:"group"`
+}
+
 type syncedRouteSlot struct {
 	RouteSlotID string   `json:"route_slot_id"`
 	Selector    string   `json:"selector"`
@@ -219,6 +229,8 @@ func managementRoutes() managementRegistration {
 			{Method: http.MethodGet, Path: "/plugins/" + PluginName + "/mihomo/status", Description: "Check the configured Mihomo controller."},
 			{Method: http.MethodPost, Path: "/plugins/" + PluginName + "/route-slots/sync", Description: "Refresh Selector nodes and current selections from Mihomo."},
 			{Method: http.MethodPost, Path: "/plugins/" + PluginName + "/route-slots/select", Description: "Manually switch a route slot Selector node."},
+			{Method: http.MethodPut, Path: "/plugins/" + PluginName + "/credentials/alias", Description: "Override the display alias for a credential."},
+			{Method: http.MethodPost, Path: "/plugins/" + PluginName + "/credentials/move", Description: "Move an existing credential to another group."},
 			{Method: http.MethodPost, Path: "/plugins/" + PluginName + "/import/preview", Description: "Preview credential conversion without writing CPA Auth files."},
 			{Method: http.MethodPost, Path: "/plugins/" + PluginName + "/upload", Description: "Upload credentials from the management page."},
 			{Method: http.MethodPost, Path: "/plugins/" + PluginName + "/import", Description: "Import credentials through the external Management API."},
@@ -256,6 +268,10 @@ func (a *App) handleManagement(raw []byte) (json.RawMessage, error) {
 		response, err = a.syncRouteSlots()
 	case req.Method == http.MethodPost && path == managementPrefix+"/route-slots/select":
 		response, err = a.selectRouteNode(req.Body)
+	case req.Method == http.MethodPut && path == managementPrefix+"/credentials/alias":
+		response, err = a.setCredentialAlias(req.Body)
+	case req.Method == http.MethodPost && path == managementPrefix+"/credentials/move":
+		response, err = a.moveCredential(req.Body)
 	case req.Method == http.MethodPost && path == managementPrefix+"/import/preview":
 		response, err = a.previewImport(req.Body)
 	case req.Method == http.MethodPost && path == managementPrefix+"/upload":
@@ -486,6 +502,94 @@ func (a *App) selectRouteNode(body []byte) (managementResponse, error) {
 		"selector":      selectedSlot.Selector,
 		"current_node":  input.Node,
 	}), nil
+}
+
+func (a *App) setCredentialAlias(body []byte) (managementResponse, error) {
+	var input aliasInput
+	if err := decodeBody(body, &input); err != nil {
+		return managementResponse{}, err
+	}
+	input.Identity = strings.TrimSpace(input.Identity)
+	if input.Identity == "" {
+		return managementResponse{}, clientError("identity is required")
+	}
+	updated, err := a.store.Update(func(value *model.State) error {
+		for index := range value.Credentials {
+			if value.Credentials[index].Identity == input.Identity {
+				value.Credentials[index].Alias = strings.TrimSpace(input.Alias)
+				value.Credentials[index].UpdatedAt = time.Now().UTC()
+				return nil
+			}
+		}
+		return clientError("credential does not exist")
+	})
+	if err != nil {
+		return managementResponse{}, err
+	}
+	return jsonResponse(http.StatusOK, updated.Public()), nil
+}
+
+func (a *App) moveCredential(body []byte) (managementResponse, error) {
+	var input moveCredentialInput
+	if err := decodeBody(body, &input); err != nil {
+		return managementResponse{}, err
+	}
+	input.Identity = strings.TrimSpace(input.Identity)
+	input.Group = strings.TrimSpace(input.Group)
+	if input.Identity == "" || input.Group == "" {
+		return managementResponse{}, clientError("identity and group are required")
+	}
+	value, err := a.store.Load()
+	if err != nil {
+		return managementResponse{}, err
+	}
+	targetGroup, ok := findGroup(value, input.Group)
+	if !ok {
+		return managementResponse{}, clientError("group does not exist")
+	}
+	credentialIndex := -1
+	for index := range value.Credentials {
+		if value.Credentials[index].Identity == input.Identity {
+			credentialIndex = index
+			break
+		}
+	}
+	if credentialIndex < 0 {
+		return managementResponse{}, clientError("credential does not exist")
+	}
+	credential := value.Credentials[credentialIndex]
+	credential.Group = targetGroup.Name
+	credential.UpdatedAt = time.Now().UTC()
+	files, err := a.listHostAuthFiles()
+	if err != nil {
+		return managementResponse{}, upstreamError("list CPA Auth files: " + err.Error())
+	}
+	byName := make(map[string]hostAuthFileEntry, len(files))
+	for _, file := range files {
+		byName[strings.ToLower(file.Name)] = file
+	}
+	auth, err := a.readExistingAuth(credential.AuthFile, byName)
+	if err != nil {
+		return managementResponse{}, upstreamError("read CPA Auth " + credential.AuthFile + ": " + err.Error())
+	}
+	if auth == nil {
+		auth = map[string]any{}
+	}
+	applyManagedFields(auth, value, credential, targetGroup)
+	if err := a.saveHostAuth(credential.AuthFile, auth); err != nil {
+		return managementResponse{}, upstreamError("save CPA Auth " + credential.AuthFile + ": " + err.Error())
+	}
+	updated, err := a.store.Update(func(state *model.State) error {
+		if credentialIndex >= len(state.Credentials) || state.Credentials[credentialIndex].Identity != input.Identity {
+			return errors.New("credential changed while moving groups")
+		}
+		state.Credentials[credentialIndex] = credential
+		return nil
+	})
+	if err != nil {
+		return managementResponse{}, err
+	}
+	return jsonResponse(http.StatusOK, updated.Public()), nil
 }
 
 func (a *App) mihomoClient() (model.State, *mihomo.Client, error) {

@@ -235,6 +235,50 @@ func TestUploadAdoptsExistingCPAAuthFile(t *testing.T) {
 	}
 }
 
+func TestAliasAndMoveCredential(t *testing.T) {
+	store := state.New(filepath.Join(t.TempDir(), "state.json"))
+	host := newRecordingHost()
+	application := New(store, host)
+	for _, name := range []string{"primary", "backup"} {
+		response := callManagement(t, application, http.MethodPut, managementPrefix+"/groups", map[string]any{
+			"name": name, "priority": 20, "listener_pool": "default", "shortage_policy": "default_route",
+		})
+		if response.StatusCode != http.StatusOK {
+			t.Fatalf("group status = %d body=%s", response.StatusCode, response.Body)
+		}
+	}
+	response := callManagement(t, application, http.MethodPost, managementPrefix+"/upload", map[string]any{
+		"group": "primary", "credential": map[string]any{
+			"access_token": "token", "email": "alice@example.com", "account_id": "account-1",
+		},
+	})
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("upload status = %d body=%s", response.StatusCode, response.Body)
+	}
+	identity := ""
+	loaded, _ := store.Load()
+	identity = loaded.Credentials[0].Identity
+	response = callManagement(t, application, http.MethodPut, managementPrefix+"/credentials/alias", map[string]any{
+		"identity": identity, "alias": "主号",
+	})
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("alias status = %d body=%s", response.StatusCode, response.Body)
+	}
+	response = callManagement(t, application, http.MethodPost, managementPrefix+"/credentials/move", map[string]any{
+		"identity": identity, "group": "backup",
+	})
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("move status = %d body=%s", response.StatusCode, response.Body)
+	}
+	loaded, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Credentials[0].Alias != "主号" || loaded.Credentials[0].Group != "backup" {
+		t.Fatalf("alias or group was not updated: %#v", loaded.Credentials[0])
+	}
+}
+
 func callManagement(t *testing.T, application *App, method, path string, body any) managementResponse {
 	t.Helper()
 	var bodyBytes []byte

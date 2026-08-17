@@ -78,6 +78,8 @@ POST /v0/management/plugins/cpa-route-allocator/route-slots/select
 POST /v0/management/plugins/cpa-route-allocator/import/preview
 POST /v0/management/plugins/cpa-route-allocator/upload
 POST /v0/management/plugins/cpa-route-allocator/import
+PUT  /v0/management/plugins/cpa-route-allocator/credentials/alias
+POST /v0/management/plugins/cpa-route-allocator/credentials/move
 ```
 
 Management routes use the normal CPA Management Key.
