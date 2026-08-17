@@ -66,3 +66,31 @@ func TestNewRejectsUnsafeControllerURL(t *testing.T) {
 		}
 	}
 }
+
+func TestClientReadsProxyHealthHistory(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/proxies" {
+			http.NotFound(writer, request)
+			return
+		}
+		alive := true
+		_ = json.NewEncoder(writer).Encode(map[string]any{"proxies": map[string]any{
+			"route":  map[string]any{"name": "route", "type": "Selector", "now": "node-a", "all": []string{"node-a"}},
+			"node-a": map[string]any{"name": "node-a", "type": "Http", "alive": alive, "history": []map[string]any{{"time": "2026-08-18T00:00:00Z", "delay": 123}}},
+		}})
+	}))
+	defer server.Close()
+
+	client, err := New(server.URL, "", server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxies, err := client.Proxies(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	node := proxies["node-a"]
+	if node.Alive == nil || !*node.Alive || len(node.History) != 1 || node.History[0].Delay != 123 {
+		t.Fatalf("unexpected health snapshot: %#v", node)
+	}
+}

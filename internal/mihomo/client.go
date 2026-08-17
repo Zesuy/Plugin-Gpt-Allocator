@@ -29,10 +29,20 @@ type Version struct {
 }
 
 type Selector struct {
-	Name string   `json:"name"`
-	Type string   `json:"type"`
-	Now  string   `json:"now"`
-	All  []string `json:"all"`
+	Name    string         `json:"name"`
+	Type    string         `json:"type"`
+	Now     string         `json:"now"`
+	All     []string       `json:"all"`
+	Alive   *bool          `json:"alive,omitempty"`
+	History []HistoryEntry `json:"history,omitempty"`
+}
+
+// HistoryEntry is one delay probe recorded by Mihomo for a proxy.
+// Mihomo uses delay=0/5000 for failed or timed-out probes depending on version.
+// Keep the raw values so the UI can show the controller's own history faithfully.
+type HistoryEntry struct {
+	Time  string `json:"time"`
+	Delay int    `json:"delay"`
 }
 
 type proxiesResponse struct {
@@ -77,13 +87,24 @@ func (c *Client) Selector(ctx context.Context, name string) (Selector, error) {
 	return result, nil
 }
 
-func (c *Client) Selectors(ctx context.Context) ([]Selector, error) {
+// Proxies returns the complete snapshot from Mihomo's /proxies endpoint. It is
+// used during route synchronization so node-level alive/history data is kept,
+// instead of only returning the Selector metadata.
+func (c *Client) Proxies(ctx context.Context) (map[string]Selector, error) {
 	var response proxiesResponse
 	if err := c.doJSON(ctx, http.MethodGet, "/proxies", nil, &response); err != nil {
 		return nil, err
 	}
+	return response.Proxies, nil
+}
+
+func (c *Client) Selectors(ctx context.Context) ([]Selector, error) {
+	proxies, err := c.Proxies(ctx)
+	if err != nil {
+		return nil, err
+	}
 	selectors := make([]Selector, 0)
-	for name, proxy := range response.Proxies {
+	for name, proxy := range proxies {
 		if !strings.EqualFold(strings.TrimSpace(proxy.Type), "Selector") {
 			continue
 		}

@@ -2,6 +2,7 @@ package app
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -54,8 +55,94 @@ func TestRegistrationUsesCurrentSchema(t *testing.T) {
 	if err := json.Unmarshal(raw, &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.SchemaVersion != SchemaVersion || !got.Capabilities.ManagementAPI {
+	if got.SchemaVersion != SchemaVersion || !got.Capabilities.ManagementAPI || !got.Capabilities.UsagePlugin {
 		t.Fatalf("unexpected registration: %#v", got)
+	}
+}
+
+func TestPublicIPParsesTraceResponse(t *testing.T) {
+	previous := publicIPTraceEndpoint
+	publicIPTraceEndpoint = "https://trace.test/cdn-cgi/trace"
+	defer func() { publicIPTraceEndpoint = previous }()
+
+	// Route the test endpoint through a local server by temporarily using its
+	// URL; the handler verifies that only parsed fields are returned.
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		_, _ = fmt.Fprint(writer, "fl=1\nip=203.0.113.7\nloc=US\ncolo=SJC\nhttp=http/2\n")
+	}))
+	defer server.Close()
+	publicIPTraceEndpoint = server.URL + "/cdn-cgi/trace"
+
+	application := New(state.New(filepath.Join(t.TempDir(), "state.json")), fakeHost{})
+	response := callManagement(t, application, http.MethodGet, managementPrefix+"/network/public-ip", nil)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("public IP status = %d body=%s", response.StatusCode, response.Body)
+	}
+	var got publicIPResult
+	if err := json.Unmarshal(response.Body, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.IP != "203.0.113.7" || got.Location != "US" || got.Colo != "SJC" || got.CheckedAt == "" {
+		t.Fatalf("unexpected public IP result: %#v", got)
+	}
+}
+
+func TestUsageHandleSeparatesSSEAndWebsocketStats(t *testing.T) {
+	application := New(state.New(filepath.Join(t.TempDir(), "state.json")), fakeHost{})
+	for _, record := range []map[string]any{
+		{"ExecutorType": "CodexExecutor", "Latency": int64(1500 * 1_000_000), "TTFT": int64(300 * 1_000_000), "Detail": map[string]any{"OutputTokens": 120}, "ResponseHeaders": map[string][]string{"Content-Type": {"text/event-stream"}}},
+		{"ExecutorType": "WebSocketExecutor", "Latency": int64(1000 * 1_000_000), "TTFT": int64(200 * 1_000_000), "Detail": map[string]any{"OutputTokens": 80}, "ResponseHeaders": map[string][]string{"Upgrade": {"websocket"}}},
+	} {
+		raw, err := json.Marshal(record)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := application.Handle("usage.handle", raw); err != nil {
+			t.Fatal(err)
+		}
+	}
+	response := callManagement(t, application, http.MethodGet, managementPrefix+"/stats", nil)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("stats status = %d body=%s", response.StatusCode, response.Body)
+	}
+	var got usageStatsResponse
+	if err := json.Unmarshal(response.Body, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.SSE.Requests != 1 || got.SSE.OutputTokens != 120 || got.Websocket.Requests != 1 || got.Websocket.OutputTokens != 80 {
+		t.Fatalf("unexpected transport stats: %#v", got)
+	}
+}
+
+func TestSyncRouteSlotsIncludesMihomoNodeHealth(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodGet || request.URL.Path != "/proxies" {
+			http.NotFound(writer, request)
+			return
+		}
+		_, _ = fmt.Fprint(writer, `{"proxies":{"selector":{"name":"selector","type":"Selector","now":"node-a","all":["node-a"]},"node-a":{"name":"node-a","type":"Http","alive":true,"history":[{"time":"2026-08-18T00:00:00Z","delay":123}]}}}`)
+	}))
+	defer server.Close()
+	application := New(state.New(filepath.Join(t.TempDir(), "state.json")), fakeHost{})
+	if response := callManagement(t, application, http.MethodPut, managementPrefix+"/settings", map[string]any{"mihomo_controller_url": server.URL}); response.StatusCode != http.StatusOK {
+		t.Fatalf("settings status = %d body=%s", response.StatusCode, response.Body)
+	}
+	if response := callManagement(t, application, http.MethodPut, managementPrefix+"/route-slots", map[string]any{"id": "slot-1", "listener_url": "socks5://127.0.0.1:21001", "selector": "selector", "pool": "default"}); response.StatusCode != http.StatusOK {
+		t.Fatalf("route slot status = %d body=%s", response.StatusCode, response.Body)
+	}
+	response := callManagement(t, application, http.MethodPost, managementPrefix+"/route-slots/sync", nil)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("sync status = %d body=%s", response.StatusCode, response.Body)
+	}
+	var got struct {
+		RouteSlots []syncedRouteSlot `json:"route_slots"`
+	}
+	if err := json.Unmarshal(response.Body, &got); err != nil {
+		t.Fatal(err)
+	}
+	health := got.RouteSlots[0].NodeHealth["node-a"]
+	if health.Alive == nil || !*health.Alive || len(health.History) != 1 || health.History[0].Delay != 123 {
+		t.Fatalf("unexpected node health: %#v", health)
 	}
 }
 

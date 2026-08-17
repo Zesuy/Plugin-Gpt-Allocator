@@ -34,6 +34,7 @@ type Host interface {
 type App struct {
 	store *state.Store
 	host  Host
+	usage usageStats
 }
 
 type registration struct {
@@ -59,6 +60,7 @@ type configField struct {
 
 type registrationCapabilities struct {
 	ManagementAPI bool `json:"management_api"`
+	UsagePlugin   bool `json:"usage_plugin"`
 }
 
 type managementRegistration struct {
@@ -196,11 +198,12 @@ type routeSlotDeleteInput struct {
 }
 
 type syncedRouteSlot struct {
-	RouteSlotID string   `json:"route_slot_id"`
-	Selector    string   `json:"selector"`
-	CurrentNode string   `json:"current_node,omitempty"`
-	Nodes       []string `json:"nodes,omitempty"`
-	Error       string   `json:"error,omitempty"`
+	RouteSlotID string                     `json:"route_slot_id"`
+	Selector    string                     `json:"selector"`
+	CurrentNode string                     `json:"current_node,omitempty"`
+	Nodes       []string                   `json:"nodes,omitempty"`
+	NodeHealth  map[string]mihomo.Selector `json:"node_health,omitempty"`
+	Error       string                     `json:"error,omitempty"`
 }
 
 func New(store *state.Store, host Host) *App {
@@ -215,6 +218,11 @@ func (a *App) Handle(method string, raw []byte) (json.RawMessage, error) {
 		return marshalResult(managementRoutes())
 	case "management.handle":
 		return a.handleManagement(raw)
+	case "usage.handle":
+		if err := a.handleUsage(raw); err != nil {
+			return nil, fmt.Errorf("decode usage record: %w", err)
+		}
+		return marshalResult(map[string]any{})
 	default:
 		return nil, fmt.Errorf("unknown method %q", method)
 	}
@@ -230,7 +238,7 @@ func pluginRegistration() registration {
 			GitHubRepository: "https://github.com/zesuy/cpa-route-allocator",
 			ConfigFields:     []configField{},
 		},
-		Capabilities: registrationCapabilities{ManagementAPI: true},
+		Capabilities: registrationCapabilities{ManagementAPI: true, UsagePlugin: true},
 	}
 }
 
@@ -254,6 +262,8 @@ func managementRoutes() managementRegistration {
 			{Method: http.MethodPut, Path: "/plugins/" + PluginName + "/route-slots", Description: "Create or update a Listener and Selector mapping."},
 			{Method: http.MethodDelete, Path: "/plugins/" + PluginName + "/route-slots", Description: "Delete an unused Listener and Selector mapping."},
 			{Method: http.MethodGet, Path: "/plugins/" + PluginName + "/mihomo/status", Description: "Check the configured Mihomo controller."},
+			{Method: http.MethodGet, Path: "/plugins/" + PluginName + "/network/public-ip", Description: "Read the plugin host's current public egress IP."},
+			{Method: http.MethodGet, Path: "/plugins/" + PluginName + "/stats", Description: "Read process-local usage summaries split by transport."},
 			{Method: http.MethodGet, Path: "/plugins/" + PluginName + "/mihomo/selectors", Description: "List Selector groups available from Mihomo."},
 			{Method: http.MethodPost, Path: "/plugins/" + PluginName + "/route-slots/sync", Description: "Refresh Selector nodes and current selections from Mihomo."},
 			{Method: http.MethodPost, Path: "/plugins/" + PluginName + "/route-slots/select", Description: "Manually switch a route slot Selector node."},
@@ -309,6 +319,10 @@ func (a *App) handleManagement(raw []byte) (json.RawMessage, error) {
 		response, err = a.deleteRouteSlot(req.Body)
 	case req.Method == http.MethodGet && path == managementPrefix+"/mihomo/status":
 		response, err = a.mihomoStatus()
+	case req.Method == http.MethodGet && path == managementPrefix+"/network/public-ip":
+		response, err = a.publicIP()
+	case req.Method == http.MethodGet && path == managementPrefix+"/stats":
+		response = jsonResponse(http.StatusOK, a.usage.snapshot())
 	case req.Method == http.MethodGet && path == managementPrefix+"/mihomo/selectors":
 		response, err = a.mihomoSelectors()
 	case req.Method == http.MethodPost && path == managementPrefix+"/route-slots/sync":
@@ -516,16 +530,40 @@ func (a *App) syncRouteSlots() (managementResponse, error) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
+	proxies, proxiesErr := client.Proxies(ctx)
 	results := make([]syncedRouteSlot, 0, len(value.RouteSlots))
 	currentNodes := make(map[string]string, len(value.RouteSlots))
 	for _, slot := range value.RouteSlots {
 		result := syncedRouteSlot{RouteSlotID: slot.ID, Selector: slot.Selector}
-		selector, selectorErr := client.Selector(ctx, slot.Selector)
+		var selector mihomo.Selector
+		var selectorErr error
+		if proxiesErr == nil {
+			var ok bool
+			selector, ok = proxies[slot.Selector]
+			if !ok {
+				selectorErr = fmt.Errorf("Selector %q was not found in Mihomo /proxies", slot.Selector)
+			}
+		} else {
+			// Preserve the previous per-slot behavior when a controller/version
+			// does not support a complete /proxies snapshot.
+			selector, selectorErr = client.Selector(ctx, slot.Selector)
+		}
 		if selectorErr != nil {
 			result.Error = selectorErr.Error()
 		} else {
 			result.CurrentNode = selector.Now
 			result.Nodes = selector.All
+			result.NodeHealth = make(map[string]mihomo.Selector)
+			for _, node := range selector.All {
+				if health, ok := proxies[node]; ok && (health.Alive != nil || len(health.History) > 0) {
+					result.NodeHealth[node] = mihomo.Selector{
+						Name:    health.Name,
+						Type:    health.Type,
+						Alive:   health.Alive,
+						History: health.History,
+					}
+				}
+			}
 			currentNodes[slot.ID] = selector.Now
 		}
 		results = append(results, result)
