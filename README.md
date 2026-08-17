@@ -7,8 +7,8 @@ The plugin runs inside CLIProxyAPI. It reuses the existing CPA port and Manageme
 ## Current milestone
 
 - CLIProxyAPI native ABI v1 and RPC schema v3 registration
-- embedded Management Center page at `/v0/resource/plugins/cpa-route-allocator/upload`
-- authenticated state, settings, group, Listener/Selector, and import-preview routes
+- embedded Management Center page at `/v0/resource/plugins/cpa-route-allocator/upload` with overview, import, and configuration views
+- authenticated state, settings, full group and Listener/Selector CRUD, Selector discovery, and import-preview routes
 - atomic local state with Mihomo secret redaction
 - initial sub2api/CPA-style JSON discovery and conversion
 - stable identity using provider, full email, account, and workspace information
@@ -16,8 +16,8 @@ The plugin runs inside CLIProxyAPI. It reuses the existing CPA port and Manageme
 - idempotent updates that keep the original group and route
 - LRU free-slot assignment plus share-least, reject, and default-route shortage policies
 - imports without an available Mihomo controller are retained as `pending` instead of pretending the route is ready
-
-Live Mihomo reconciliation and the full management UI are the next milestones.
+- existing CPA Auth discovery and adoption, plus safe unmanage (the Auth file is retained)
+- short toast feedback in the UI; credential and Listener edits use accessible modal dialogs
 
 ## Build
 
@@ -70,9 +70,16 @@ Authenticated Management API:
 ```text
 GET  /v0/management/plugins/cpa-route-allocator/state
 PUT  /v0/management/plugins/cpa-route-allocator/settings
+GET  /v0/management/plugins/cpa-route-allocator/groups
+POST /v0/management/plugins/cpa-route-allocator/groups
 PUT  /v0/management/plugins/cpa-route-allocator/groups
+DELETE /v0/management/plugins/cpa-route-allocator/groups
+GET  /v0/management/plugins/cpa-route-allocator/route-slots
+POST /v0/management/plugins/cpa-route-allocator/route-slots
 PUT  /v0/management/plugins/cpa-route-allocator/route-slots
+DELETE /v0/management/plugins/cpa-route-allocator/route-slots
 GET  /v0/management/plugins/cpa-route-allocator/mihomo/status
+GET  /v0/management/plugins/cpa-route-allocator/mihomo/selectors
 POST /v0/management/plugins/cpa-route-allocator/route-slots/sync
 POST /v0/management/plugins/cpa-route-allocator/route-slots/select
 POST /v0/management/plugins/cpa-route-allocator/import/preview
@@ -80,6 +87,9 @@ POST /v0/management/plugins/cpa-route-allocator/upload
 POST /v0/management/plugins/cpa-route-allocator/import
 PUT  /v0/management/plugins/cpa-route-allocator/credentials/alias
 POST /v0/management/plugins/cpa-route-allocator/credentials/move
+GET  /v0/management/plugins/cpa-route-allocator/credentials/local
+POST /v0/management/plugins/cpa-route-allocator/credentials/adopt
+DELETE /v0/management/plugins/cpa-route-allocator/credentials/managed
 ```
 
 Management routes use the normal CPA Management Key.
