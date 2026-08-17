@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/zesuy/cpa-route-allocator/internal/allocator"
 	"github.com/zesuy/cpa-route-allocator/internal/importer"
+	"github.com/zesuy/cpa-route-allocator/internal/mihomo"
 	"github.com/zesuy/cpa-route-allocator/internal/model"
 	"github.com/zesuy/cpa-route-allocator/internal/state"
 	"github.com/zesuy/cpa-route-allocator/internal/ui"
@@ -158,6 +160,19 @@ type hostAuthGetResponse struct {
 	JSON json.RawMessage `json:"json"`
 }
 
+type selectNodeInput struct {
+	RouteSlotID string `json:"route_slot_id"`
+	Node        string `json:"node"`
+}
+
+type syncedRouteSlot struct {
+	RouteSlotID string   `json:"route_slot_id"`
+	Selector    string   `json:"selector"`
+	CurrentNode string   `json:"current_node,omitempty"`
+	Nodes       []string `json:"nodes,omitempty"`
+	Error       string   `json:"error,omitempty"`
+}
+
 func New(store *state.Store, host Host) *App {
 	return &App{store: store, host: host}
 }
@@ -201,6 +216,9 @@ func managementRoutes() managementRegistration {
 			{Method: http.MethodPut, Path: "/plugins/" + PluginName + "/settings", Description: "Update Mihomo controller settings."},
 			{Method: http.MethodPut, Path: "/plugins/" + PluginName + "/groups", Description: "Create or update a credential group."},
 			{Method: http.MethodPut, Path: "/plugins/" + PluginName + "/route-slots", Description: "Create or update a Listener and Selector mapping."},
+			{Method: http.MethodGet, Path: "/plugins/" + PluginName + "/mihomo/status", Description: "Check the configured Mihomo controller."},
+			{Method: http.MethodPost, Path: "/plugins/" + PluginName + "/route-slots/sync", Description: "Refresh Selector nodes and current selections from Mihomo."},
+			{Method: http.MethodPost, Path: "/plugins/" + PluginName + "/route-slots/select", Description: "Manually switch a route slot Selector node."},
 			{Method: http.MethodPost, Path: "/plugins/" + PluginName + "/import/preview", Description: "Preview credential conversion without writing CPA Auth files."},
 			{Method: http.MethodPost, Path: "/plugins/" + PluginName + "/upload", Description: "Upload credentials from the management page."},
 			{Method: http.MethodPost, Path: "/plugins/" + PluginName + "/import", Description: "Import credentials through the external Management API."},
@@ -232,6 +250,12 @@ func (a *App) handleManagement(raw []byte) (json.RawMessage, error) {
 		response, err = a.putGroup(req.Body)
 	case req.Method == http.MethodPut && path == managementPrefix+"/route-slots":
 		response, err = a.putRouteSlot(req.Body)
+	case req.Method == http.MethodGet && path == managementPrefix+"/mihomo/status":
+		response, err = a.mihomoStatus()
+	case req.Method == http.MethodPost && path == managementPrefix+"/route-slots/sync":
+		response, err = a.syncRouteSlots()
+	case req.Method == http.MethodPost && path == managementPrefix+"/route-slots/select":
+		response, err = a.selectRouteNode(req.Body)
 	case req.Method == http.MethodPost && path == managementPrefix+"/import/preview":
 		response, err = a.previewImport(req.Body)
 	case req.Method == http.MethodPost && path == managementPrefix+"/upload":
@@ -259,6 +283,11 @@ func (a *App) putSettings(body []byte) (managementResponse, error) {
 	var input settingsInput
 	if err := decodeBody(body, &input); err != nil {
 		return managementResponse{}, err
+	}
+	if strings.TrimSpace(input.MihomoControllerURL) != "" {
+		if _, err := mihomo.New(input.MihomoControllerURL, "", nil); err != nil {
+			return managementResponse{}, clientError(err.Error())
+		}
 	}
 	updated, err := a.store.Update(func(value *model.State) error {
 		value.Settings.MihomoControllerURL = strings.TrimSpace(input.MihomoControllerURL)
@@ -341,6 +370,134 @@ func (a *App) putRouteSlot(body []byte) (managementResponse, error) {
 		return managementResponse{}, err
 	}
 	return jsonResponse(http.StatusOK, updated.Public()), nil
+}
+
+func (a *App) mihomoStatus() (managementResponse, error) {
+	value, client, err := a.mihomoClient()
+	if err != nil {
+		return managementResponse{}, clientError(err.Error())
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	version, err := client.Version(ctx)
+	if err != nil {
+		return managementResponse{}, upstreamError(err.Error())
+	}
+	return jsonResponse(http.StatusOK, map[string]any{
+		"controller_url": value.Settings.MihomoControllerURL,
+		"version":        version.Version,
+		"meta":           version.Meta,
+		"premium":        version.Premium,
+	}), nil
+}
+
+func (a *App) syncRouteSlots() (managementResponse, error) {
+	value, client, err := a.mihomoClient()
+	if err != nil {
+		return managementResponse{}, clientError(err.Error())
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	results := make([]syncedRouteSlot, 0, len(value.RouteSlots))
+	currentNodes := make(map[string]string, len(value.RouteSlots))
+	for _, slot := range value.RouteSlots {
+		result := syncedRouteSlot{RouteSlotID: slot.ID, Selector: slot.Selector}
+		selector, selectorErr := client.Selector(ctx, slot.Selector)
+		if selectorErr != nil {
+			result.Error = selectorErr.Error()
+		} else {
+			result.CurrentNode = selector.Now
+			result.Nodes = selector.All
+			currentNodes[slot.ID] = selector.Now
+		}
+		results = append(results, result)
+	}
+	if len(currentNodes) > 0 {
+		if _, err := a.store.Update(func(state *model.State) error {
+			for index := range state.RouteSlots {
+				if node, ok := currentNodes[state.RouteSlots[index].ID]; ok {
+					state.RouteSlots[index].CurrentNode = node
+				}
+			}
+			return nil
+		}); err != nil {
+			return managementResponse{}, err
+		}
+	}
+	return jsonResponse(http.StatusOK, map[string]any{"route_slots": results}), nil
+}
+
+func (a *App) selectRouteNode(body []byte) (managementResponse, error) {
+	var input selectNodeInput
+	if err := decodeBody(body, &input); err != nil {
+		return managementResponse{}, err
+	}
+	input.RouteSlotID = strings.TrimSpace(input.RouteSlotID)
+	input.Node = strings.TrimSpace(input.Node)
+	if input.RouteSlotID == "" || input.Node == "" {
+		return managementResponse{}, clientError("route_slot_id and node are required")
+	}
+	value, client, err := a.mihomoClient()
+	if err != nil {
+		return managementResponse{}, clientError(err.Error())
+	}
+	var selectedSlot *model.RouteSlot
+	for index := range value.RouteSlots {
+		if value.RouteSlots[index].ID == input.RouteSlotID {
+			selectedSlot = &value.RouteSlots[index]
+			break
+		}
+	}
+	if selectedSlot == nil {
+		return managementResponse{}, clientError("route slot does not exist")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	selector, err := client.Selector(ctx, selectedSlot.Selector)
+	if err != nil {
+		return managementResponse{}, upstreamError(err.Error())
+	}
+	found := false
+	for _, node := range selector.All {
+		if node == input.Node {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return managementResponse{}, clientError("node is not available in the configured Selector")
+	}
+	if err := client.Select(ctx, selectedSlot.Selector, input.Node); err != nil {
+		return managementResponse{}, upstreamError(err.Error())
+	}
+	if _, err := a.store.Update(func(state *model.State) error {
+		for index := range state.RouteSlots {
+			if state.RouteSlots[index].ID == input.RouteSlotID {
+				state.RouteSlots[index].CurrentNode = input.Node
+				return nil
+			}
+		}
+		return clientError("route slot disappeared while updating state")
+	}); err != nil {
+		return managementResponse{}, err
+	}
+	return jsonResponse(http.StatusOK, map[string]any{
+		"route_slot_id": input.RouteSlotID,
+		"selector":      selectedSlot.Selector,
+		"current_node":  input.Node,
+	}), nil
+}
+
+func (a *App) mihomoClient() (model.State, *mihomo.Client, error) {
+	value, err := a.store.Load()
+	if err != nil {
+		return model.State{}, nil, err
+	}
+	client, err := mihomo.New(value.Settings.MihomoControllerURL, value.Settings.MihomoSecret, nil)
+	if err != nil {
+		return model.State{}, nil, err
+	}
+	return value, client, nil
 }
 
 func (a *App) previewImport(body []byte) (managementResponse, error) {

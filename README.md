@@ -71,6 +71,9 @@ GET  /v0/management/plugins/cpa-route-allocator/state
 PUT  /v0/management/plugins/cpa-route-allocator/settings
 PUT  /v0/management/plugins/cpa-route-allocator/groups
 PUT  /v0/management/plugins/cpa-route-allocator/route-slots
+GET  /v0/management/plugins/cpa-route-allocator/mihomo/status
+POST /v0/management/plugins/cpa-route-allocator/route-slots/sync
+POST /v0/management/plugins/cpa-route-allocator/route-slots/select
 POST /v0/management/plugins/cpa-route-allocator/import/preview
 POST /v0/management/plugins/cpa-route-allocator/upload
 POST /v0/management/plugins/cpa-route-allocator/import
