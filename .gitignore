@@ -1,0 +1,7 @@
+/dist/
+*.h
+*.so
+*.dylib
+*.dll
+*.test
+/plugins/data/
