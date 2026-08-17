@@ -187,6 +187,10 @@ type moveCredentialInput struct {
 	Group    string `json:"group"`
 }
 
+type reassignCredentialInput struct {
+	Identity string `json:"identity"`
+}
+
 type adoptCredentialInput struct {
 	AuthIndex string `json:"auth_index"`
 	Group     string `json:"group"`
@@ -283,6 +287,7 @@ func managementRoutes() managementRegistration {
 			{Method: http.MethodPost, Path: "/plugins/" + PluginName + "/route-slots/select", Description: "Manually switch a route slot Selector node."},
 			{Method: http.MethodPut, Path: "/plugins/" + PluginName + "/credentials/alias", Description: "Override the display alias for a credential."},
 			{Method: http.MethodPost, Path: "/plugins/" + PluginName + "/credentials/move", Description: "Move an existing credential to another group."},
+			{Method: http.MethodPost, Path: "/plugins/" + PluginName + "/credentials/reassign", Description: "Reassign a managed credential using its current group policy."},
 			{Method: http.MethodPut, Path: "/plugins/" + PluginName + "/credentials/status", Description: "Enable or disable a managed credential through CPA."},
 			{Method: http.MethodPost, Path: "/plugins/" + PluginName + "/credentials/quota", Description: "Check Codex quota for one managed credential through CPA."},
 			{Method: http.MethodGet, Path: "/plugins/" + PluginName + "/credentials/local", Description: "List existing CPA Auth files that can be managed."},
@@ -357,6 +362,8 @@ func (a *App) handleManagement(raw []byte) (json.RawMessage, error) {
 		response, err = a.setCredentialAlias(req.Body)
 	case req.Method == http.MethodPost && path == managementPrefix+"/credentials/move":
 		response, err = a.moveCredential(req.Body)
+	case req.Method == http.MethodPost && path == managementPrefix+"/credentials/reassign":
+		response, err = a.reassignCredential(req.Body)
 	case req.Method == http.MethodPut && path == managementPrefix+"/credentials/status":
 		response, err = a.setCredentialStatus(req.Body, req.Headers)
 	case req.Method == http.MethodPost && path == managementPrefix+"/credentials/quota":
@@ -730,53 +737,37 @@ func (a *App) moveCredential(body []byte) (managementResponse, error) {
 	if input.Identity == "" || input.Group == "" {
 		return managementResponse{}, clientError("identity and group are required")
 	}
+	updated, err := a.assignManagedCredential(input.Identity, input.Group)
+	if err != nil {
+		return managementResponse{}, err
+	}
+	return jsonResponse(http.StatusOK, updated.Public()), nil
+}
+
+func (a *App) reassignCredential(body []byte) (managementResponse, error) {
+	var input reassignCredentialInput
+	if err := decodeBody(body, &input); err != nil {
+		return managementResponse{}, err
+	}
+	input.Identity = strings.TrimSpace(input.Identity)
+	if input.Identity == "" {
+		return managementResponse{}, clientError("identity is required")
+	}
 	value, err := a.store.Load()
 	if err != nil {
 		return managementResponse{}, err
 	}
-	targetGroup, ok := findGroup(value, input.Group)
-	if !ok {
-		return managementResponse{}, clientError("group does not exist")
-	}
-	credentialIndex := -1
-	for index := range value.Credentials {
-		if value.Credentials[index].Identity == input.Identity {
-			credentialIndex = index
+	group := ""
+	for _, credential := range value.Credentials {
+		if credential.Identity == input.Identity {
+			group = credential.Group
 			break
 		}
 	}
-	if credentialIndex < 0 {
+	if group == "" {
 		return managementResponse{}, clientError("credential does not exist")
 	}
-	credential := value.Credentials[credentialIndex]
-	credential.Group = targetGroup.Name
-	credential.UpdatedAt = time.Now().UTC()
-	files, err := a.listHostAuthFiles()
-	if err != nil {
-		return managementResponse{}, upstreamError("list CPA Auth files: " + err.Error())
-	}
-	byName := make(map[string]hostAuthFileEntry, len(files))
-	for _, file := range files {
-		byName[strings.ToLower(file.Name)] = file
-	}
-	auth, err := a.readExistingAuth(credential.AuthFile, byName)
-	if err != nil {
-		return managementResponse{}, upstreamError("read CPA Auth " + credential.AuthFile + ": " + err.Error())
-	}
-	if auth == nil {
-		auth = map[string]any{}
-	}
-	applyManagedFields(auth, value, credential, targetGroup)
-	if err := a.saveHostAuth(credential.AuthFile, auth); err != nil {
-		return managementResponse{}, upstreamError("save CPA Auth " + credential.AuthFile + ": " + err.Error())
-	}
-	updated, err := a.store.Update(func(state *model.State) error {
-		if credentialIndex >= len(state.Credentials) || state.Credentials[credentialIndex].Identity != input.Identity {
-			return errors.New("credential changed while moving groups")
-		}
-		state.Credentials[credentialIndex] = credential
-		return nil
-	})
+	updated, err := a.assignManagedCredential(input.Identity, group)
 	if err != nil {
 		return managementResponse{}, err
 	}

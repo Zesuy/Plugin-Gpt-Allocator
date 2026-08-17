@@ -423,6 +423,113 @@ func TestAliasAndMoveCredential(t *testing.T) {
 	}
 }
 
+func TestCredentialMoveReassignsByGroupPolicy(t *testing.T) {
+	mihomoServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path == "/proxies/target-selector" && request.Method == http.MethodGet {
+			_, _ = writer.Write([]byte(`{"name":"target-selector","type":"Selector","now":"node-a","all":["node-a"]}`))
+			return
+		}
+		http.NotFound(writer, request)
+	}))
+	defer mihomoServer.Close()
+
+	for _, test := range []struct {
+		name          string
+		policy        model.ShortagePolicy
+		wantStatus    int
+		wantGroup     string
+		wantSlot      string
+		wantRoute     string
+		wantProxy     any
+		wantProxyKept bool
+	}{
+		{name: "share least uses occupied listener", policy: model.ShortageShareLeast, wantStatus: http.StatusOK, wantGroup: "target", wantSlot: "target-slot", wantRoute: model.RouteStatusShared, wantProxy: "socks5://127.0.0.1:22002"},
+		{name: "default route removes stale proxy", policy: model.ShortageDefault, wantStatus: http.StatusOK, wantGroup: "target", wantRoute: model.RouteStatusDefault},
+		{name: "reject preserves prior assignment", policy: model.ShortageReject, wantStatus: http.StatusConflict, wantGroup: "source", wantSlot: "source-slot", wantRoute: model.RouteStatusAssigned, wantProxy: "socks5://127.0.0.1:22001", wantProxyKept: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			store := state.New(filepath.Join(t.TempDir(), "state.json"))
+			host := newRecordingHost()
+			host.saved["alice@example.com.json"] = map[string]any{"type": "codex", "access_token": "token", "proxy_url": "socks5://127.0.0.1:22001"}
+			application := New(store, host)
+			if _, err := store.Update(func(value *model.State) error {
+				value.Settings.MihomoControllerURL = mihomoServer.URL
+				value.Groups = []model.Group{
+					{Name: "source", ListenerPool: "source", ShortagePolicy: model.ShortageReject},
+					{Name: "target", ListenerPool: "target", ShortagePolicy: test.policy},
+				}
+				value.RouteSlots = []model.RouteSlot{
+					{ID: "source-slot", ListenerURL: "socks5://127.0.0.1:22001", Selector: "source-selector", Pool: "source"},
+					{ID: "target-slot", ListenerURL: "socks5://127.0.0.1:22002", Selector: "target-selector", Pool: "target"},
+				}
+				value.Credentials = []model.Credential{
+					{Identity: "alice", AuthFile: "alice@example.com.json", Email: "alice@example.com", Group: "source", RouteSlotID: "source-slot", RouteStatus: model.RouteStatusAssigned},
+					{Identity: "bob", AuthFile: "bob@example.com.json", Email: "bob@example.com", Group: "target", RouteSlotID: "target-slot", RouteStatus: model.RouteStatusAssigned},
+				}
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+
+			response := callManagement(t, application, http.MethodPost, managementPrefix+"/credentials/move", map[string]any{"identity": "alice", "group": "target"})
+			if response.StatusCode != test.wantStatus {
+				t.Fatalf("move status = %d body=%s", response.StatusCode, response.Body)
+			}
+			loaded, err := store.Load()
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := loaded.Credentials[0]
+			if got.Group != test.wantGroup || got.RouteSlotID != test.wantSlot || got.RouteStatus != test.wantRoute {
+				t.Fatalf("unexpected assignment: %#v", got)
+			}
+			proxy, hasProxy := host.saved["alice@example.com.json"]["proxy_url"]
+			if test.wantProxyKept || test.wantProxy != nil {
+				if !hasProxy || proxy != test.wantProxy {
+					t.Fatalf("proxy_url = %#v present=%v, auth=%#v", proxy, hasProxy, host.saved["alice@example.com.json"])
+				}
+			} else if hasProxy {
+				t.Fatalf("default route retained stale proxy_url: %#v", host.saved["alice@example.com.json"])
+			}
+		})
+	}
+}
+
+func TestCredentialReassignIgnoresItsOwnPreviousSlotUsage(t *testing.T) {
+	mihomoServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path == "/proxies/only-selector" && request.Method == http.MethodGet {
+			_, _ = writer.Write([]byte(`{"name":"only-selector","type":"Selector","now":"node-a","all":["node-a"]}`))
+			return
+		}
+		http.NotFound(writer, request)
+	}))
+	defer mihomoServer.Close()
+	store := state.New(filepath.Join(t.TempDir(), "state.json"))
+	host := newRecordingHost()
+	host.saved["alice@example.com.json"] = map[string]any{"type": "codex", "access_token": "token", "proxy_url": "socks5://127.0.0.1:23001"}
+	application := New(store, host)
+	if _, err := store.Update(func(value *model.State) error {
+		value.Settings.MihomoControllerURL = mihomoServer.URL
+		value.Groups = []model.Group{{Name: "primary", ListenerPool: "default", ShortagePolicy: model.ShortageReject}}
+		value.RouteSlots = []model.RouteSlot{{ID: "only-slot", ListenerURL: "socks5://127.0.0.1:23001", Selector: "only-selector", Pool: "default"}}
+		value.Credentials = []model.Credential{{Identity: "alice", AuthFile: "alice@example.com.json", Email: "alice@example.com", Group: "primary", RouteSlotID: "only-slot", RouteStatus: model.RouteStatusAssigned}}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	response := callManagement(t, application, http.MethodPost, managementPrefix+"/credentials/reassign", map[string]any{"identity": "alice"})
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("reassign status = %d body=%s", response.StatusCode, response.Body)
+	}
+	loaded, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := loaded.Credentials[0]; got.RouteSlotID != "only-slot" || got.RouteStatus != model.RouteStatusAssigned {
+		t.Fatalf("reassign counted its own old slot as occupied: %#v", got)
+	}
+}
+
 func TestCredentialStatusDelegatesToCPA(t *testing.T) {
 	store := state.New(filepath.Join(t.TempDir(), "state.json"))
 	host := newRecordingHost()
