@@ -5,316 +5,78 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>CPA Route Allocator</title>
   <style>
-    :root {
-      color-scheme: light dark;
-      --bg: #f1f5f9; --surface: #ffffff; --surface-soft: #f8fafc; --text: #0f172a;
-      --muted: #526075; --border: #cbd5e1; --primary: #1e293b; --primary-text: #ffffff;
-      --accent: #15803d; --danger: #b42318; --focus: #2563eb; --shadow: 0 8px 28px rgba(15,23,42,.07);
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    }
-    * { box-sizing: border-box; }
-    body { margin: 0; min-width: 320px; background: var(--bg); color: var(--text); font-size: 16px; line-height: 1.5; }
-    button, input, textarea, select { font: inherit; }
-    button, input, textarea, select { min-height: 44px; border-radius: 9px; }
-    button { border: 0; padding: 10px 16px; background: var(--primary); color: var(--primary-text); font-weight: 700; cursor: pointer; transition: opacity .18s ease, background .18s ease; }
-    button:hover { opacity: .88; }
-    button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 3px solid color-mix(in srgb, var(--focus) 38%, transparent); outline-offset: 2px; }
-    button:disabled { cursor: wait; opacity: .48; }
-    button.secondary { background: transparent; color: var(--text); border: 1px solid var(--border); }
-    input, textarea, select { width: 100%; border: 1px solid var(--border); padding: 10px 12px; background: var(--surface); color: var(--text); }
-    textarea { min-height: 190px; resize: vertical; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
-    label { display: block; margin: 12px 0 6px; font-size: 14px; font-weight: 700; }
-    small, .muted { color: var(--muted); }
-    h1, h2 { line-height: 1.2; }
-    h1 { margin: 0 0 5px; font-size: clamp(24px, 4vw, 32px); }
-    h2 { margin: 0 0 6px; font-size: 19px; }
-    p { margin: 0; }
-    main { width: min(1180px, 100%); margin: 0 auto; padding: 24px 16px 56px; }
-    header { display: flex; align-items: end; justify-content: space-between; gap: 20px; margin-bottom: 20px; }
-    .auth { width: min(380px, 100%); }
-    .auth label { margin-top: 0; }
-    .status { display: inline-flex; align-items: center; gap: 8px; margin-top: 9px; font-size: 14px; color: var(--muted); }
-    .status::before { content: ""; width: 9px; height: 9px; border-radius: 50%; background: var(--border); }
-    .status.ok::before { background: var(--accent); }
-    .status.error::before { background: var(--danger); }
-    .metrics, .two-col { display: grid; gap: 14px; }
-    .metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-bottom: 14px; }
-    .two-col { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-bottom: 14px; }
-    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 18px; box-shadow: var(--shadow); min-width: 0; }
-    .metric span { display: block; color: var(--muted); font-size: 14px; }
-    .metric strong { display: block; margin-top: 2px; font: 700 29px/1.2 ui-monospace, SFMono-Regular, Consolas, monospace; }
-    .actions { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 14px; }
-    .actions button { width: auto; min-width: 112px; }
-    .notice { position: sticky; bottom: 12px; z-index: 10; margin-top: 14px; min-height: 0; padding: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
-    .notice:not(:empty) { padding: 12px 14px; background: var(--surface); border: 1px solid var(--border); border-left: 4px solid var(--accent); border-radius: 9px; box-shadow: var(--shadow); }
-    .notice.error { border-left-color: var(--danger); color: var(--danger); }
-    .table-wrap { overflow-x: auto; margin-top: 14px; border: 1px solid var(--border); border-radius: 10px; }
-    table { width: 100%; border-collapse: collapse; min-width: 620px; font-size: 14px; }
-    th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--border); vertical-align: middle; }
-    th { color: var(--muted); background: var(--surface-soft); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
-    tr:last-child td { border-bottom: 0; }
-    td code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
-    td .inline { display: flex; gap: 8px; min-width: 260px; }
-    td .inline input { min-height: 38px; }
-    td .inline button { min-height: 38px; padding: 7px 11px; }
-    .empty { padding: 20px; color: var(--muted); text-align: center; }
-    @media (max-width: 760px) {
-      main { padding-inline: 12px; }
-      header { align-items: stretch; flex-direction: column; }
-      .auth { width: 100%; }
-      .metrics, .two-col { grid-template-columns: 1fr; }
-      .card { padding: 16px; }
-      .actions button { flex: 1 1 140px; }
-    }
-    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; } }
-    @media (prefers-color-scheme: dark) {
-      :root { --bg:#0f172a; --surface:#182234; --surface-soft:#111b2b; --text:#f8fafc; --muted:#b3bfd0; --border:#475569; --primary:#f8fafc; --primary-text:#0f172a; --accent:#4ade80; --danger:#fca5a5; --focus:#60a5fa; --shadow:none; }
-    }
+    :root { color-scheme: light dark; --bg:#eef2f7; --surface:#fff; --surface-soft:#f6f8fb; --text:#152033; --muted:#657287; --border:#d6deea; --primary:#2457d6; --primary-strong:#1944b5; --accent:#087f5b; --danger:#b42318; --focus:#4c8dff; --shadow:0 12px 32px rgba(15,23,42,.08); --radius:14px; font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    *{box-sizing:border-box} body{margin:0;min-width:320px;background:var(--bg);color:var(--text);font-size:16px;line-height:1.5} button,input,textarea,select{font:inherit} button,input,textarea,select{min-height:44px;border-radius:9px} button{border:0;padding:10px 16px;background:var(--primary);color:#fff;font-weight:700;cursor:pointer;transition:background .18s ease,transform .18s ease,opacity .18s ease;touch-action:manipulation} button:hover{background:var(--primary-strong)} button:active{transform:scale(.98)} button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:3px solid color-mix(in srgb,var(--focus) 38%,transparent);outline-offset:2px} button:disabled{cursor:wait;opacity:.5} button.secondary{background:transparent;color:var(--text);border:1px solid var(--border)} button.danger{background:transparent;color:var(--danger);border:1px solid color-mix(in srgb,var(--danger) 35%,var(--border))} input,textarea,select{width:100%;border:1px solid var(--border);padding:10px 12px;background:var(--surface);color:var(--text)} textarea{min-height:210px;resize:vertical;font-family:ui-monospace,SFMono-Regular,Consolas,monospace} label{display:block;margin:12px 0 6px;font-size:14px;font-weight:700} small,.muted{color:var(--muted)} h1,h2,h3{line-height:1.2} h1{margin:0 0 5px;font-size:clamp(25px,4vw,34px)} h2{margin:0 0 6px;font-size:20px} h3{margin:0;font-size:16px} p{margin:0} main{width:min(1220px,100%);margin:0 auto;padding:26px 18px 64px} header{display:flex;align-items:end;justify-content:space-between;gap:24px;margin-bottom:20px}.auth{width:min(390px,100%)}.auth label{margin-top:0}.status{display:inline-flex;align-items:center;gap:8px;margin-top:10px;font-size:14px;color:var(--muted)}.status:before{content:"";width:9px;height:9px;border-radius:50%;background:var(--border)}.status.ok:before{background:var(--accent)}.status.error:before{background:var(--danger)}
+    .nav{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;padding:6px;background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow)}.nav button{min-height:40px;padding:8px 14px;background:transparent;color:var(--muted)}.nav button[aria-selected=true]{background:var(--primary);color:#fff}.page{display:none}.page.active{display:block}.metrics,.grid{display:grid;gap:14px}.metrics{grid-template-columns:repeat(3,minmax(0,1fr));margin-bottom:14px}.grid.two{grid-template-columns:repeat(2,minmax(0,1fr))}.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px;box-shadow:var(--shadow);min-width:0}.metric span{display:block;color:var(--muted);font-size:14px}.metric strong{display:block;margin-top:2px;font:700 29px/1.2 ui-monospace,SFMono-Regular,Consolas,monospace}.section-head{display:flex;align-items:start;justify-content:space-between;gap:12px}.section-head .actions{margin-top:0}.actions{display:flex;flex-wrap:wrap;gap:9px;margin-top:16px}.actions button{width:auto;min-width:112px}.table-wrap{overflow-x:auto;margin-top:14px;border:1px solid var(--border);border-radius:10px}table{width:100%;border-collapse:collapse;min-width:700px;font-size:14px}th,td{padding:11px 12px;text-align:left;border-bottom:1px solid var(--border);vertical-align:middle}th{color:var(--muted);background:var(--surface-soft);font-size:12px;text-transform:uppercase;letter-spacing:.04em}tr:last-child td{border-bottom:0}td code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}.ellipsis{display:block;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.row-actions{display:flex;gap:7px;flex-wrap:wrap}.row-actions button{min-height:36px;padding:6px 10px;font-size:13px}.empty{padding:24px;color:var(--muted);text-align:center}.tag{display:inline-flex;align-items:center;border-radius:99px;padding:3px 9px;background:var(--surface-soft);color:var(--muted);font-size:12px}.tag.ok{color:var(--accent)}.tag.warn{color:#9a6700}.helper{margin-top:7px;font-size:13px;color:var(--muted)}.preview{margin-top:14px;padding:12px;border:1px dashed var(--border);border-radius:10px;background:var(--surface-soft);font-size:14px}.toast{position:fixed;right:18px;bottom:18px;z-index:1000;max-width:min(420px,calc(100vw - 36px));padding:12px 15px;background:var(--text);color:var(--surface);border-radius:10px;box-shadow:var(--shadow);opacity:0;transform:translateY(10px);pointer-events:none;transition:opacity .2s ease,transform .2s ease}.toast.show{opacity:1;transform:translateY(0)}.toast.error{background:var(--danger);color:#fff}.toast[hidden]{display:block;opacity:0}.dialog{width:min(560px,calc(100vw - 28px));border:1px solid var(--border);border-radius:16px;padding:0;background:var(--surface);color:var(--text);box-shadow:0 24px 70px rgba(0,0,0,.24)}.dialog::backdrop{background:rgba(15,23,42,.55)}.dialog-head{display:flex;justify-content:space-between;align-items:center;padding:18px 20px;border-bottom:1px solid var(--border)}.dialog-body{padding:4px 20px 20px}.dialog-actions{display:flex;justify-content:flex-end;gap:9px;margin-top:18px}.close{min-width:44px;width:44px;padding:8px;background:transparent;color:var(--muted);font-size:22px}.danger-zone{margin-top:20px;padding-top:15px;border-top:1px solid var(--border)}
+    @media(max-width:780px){main{padding:18px 12px 54px}header{align-items:stretch;flex-direction:column}.auth{width:100%}.metrics,.grid.two{grid-template-columns:1fr}.card{padding:16px}.nav{overflow-x:auto;flex-wrap:nowrap}.nav button{white-space:nowrap}.section-head{align-items:stretch;flex-direction:column}.section-head .actions{margin-top:0}.ellipsis{max-width:180px}}
+    @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition:none!important}}
+    @media(prefers-color-scheme:dark){:root{--bg:#0e1726;--surface:#172337;--surface-soft:#111b2c;--text:#f4f7fb;--muted:#b2bfd2;--border:#40506a;--primary:#6d9aff;--primary-strong:#8badff;--accent:#5ee6b4;--danger:#ffaaa3;--focus:#9bc0ff;--shadow:none}}
   </style>
 </head>
-<body>
-<main>
-  <header>
-    <div>
-      <h1>CPA Route Allocator</h1>
-      <p class="muted">凭据导入、分组与 Mihomo 出口分配</p>
-      <div id="connectionStatus" class="status">等待连接 CPA Management API</div>
-    </div>
-    <div class="auth">
-      <label for="managementKey">CPA Management Key</label>
-      <input id="managementKey" type="password" autocomplete="current-password" aria-describedby="keyHelp">
-      <small id="keyHelp">仅保存在当前标签页会话中，不会写入插件状态。</small>
-    </div>
-  </header>
+<body><main>
+  <header><div><h1>CPA Route Allocator</h1><p class="muted">凭据、分组和 Mihomo 出口的统一管理</p><div id="connectionStatus" class="status">等待连接 CPA Management API</div></div><div class="auth"><label for="managementKey">CPA Management Key</label><input id="managementKey" type="password" autocomplete="current-password"><small>只保存在当前标签页会话中。</small></div></header>
+  <nav class="nav" aria-label="管理页面"><button data-page="overview" aria-selected="true">总览</button><button data-page="import">导入凭据</button><button data-page="config">配置</button></nav>
 
-  <section class="metrics" aria-label="Allocator 概览">
-    <div class="card metric"><span>凭据</span><strong id="credentialCount">–</strong></div>
-    <div class="card metric"><span>分组</span><strong id="groupCount">–</strong></div>
-    <div class="card metric"><span>出口</span><strong id="slotCount">–</strong></div>
+  <section id="page-overview" class="page active"><div class="metrics"><div class="card metric"><span>已管理凭据</span><strong id="credentialCount">–</strong></div><div class="card metric"><span>分组</span><strong id="groupCount">–</strong></div><div class="card metric"><span>Listener 出口</span><strong id="slotCount">–</strong></div></div>
+    <section class="card"><div class="section-head"><div><h2>凭据</h2><p class="muted">管理已有 CPA Auth 的分组、显示名和归属。</p></div><div class="actions"><button type="button" id="refresh">刷新</button><button type="button" class="secondary" id="adoptOpen">发现本地凭据</button></div></div><div class="table-wrap"><table><thead><tr><th>显示名称</th><th>邮箱 / 工作区</th><th>分组</th><th>出口</th><th>状态</th><th>操作</th></tr></thead><tbody id="credentialRows"><tr><td colspan="6" class="empty">尚未加载</td></tr></tbody></table></div></section>
+    <section class="card" style="margin-top:14px"><div class="section-head"><div><h2>Listener 出口</h2><p class="muted">先同步一次即可看到当前节点和可选节点。</p></div><div class="actions"><button type="button" class="secondary" id="syncSlots">同步节点</button></div></div><div class="table-wrap"><table><thead><tr><th>出口</th><th>Listener</th><th>Selector</th><th>当前节点</th><th>手动切换</th><th>操作</th></tr></thead><tbody id="slotRows"><tr><td colspan="6" class="empty">还没有配置 Listener；去配置页添加一个出口。</td></tr></tbody></table></div></section>
   </section>
 
-  <section class="two-col">
-    <form id="settingsForm" class="card">
-      <h2>Mihomo 连接</h2>
-      <p class="muted">插件只调用现有 Controller，不创建 Listener。</p>
-      <label for="controllerURL">Controller URL</label>
-      <input id="controllerURL" type="url" required placeholder="http://192.168.5.1:9090">
-      <label for="mihomoSecret">Secret</label>
-      <input id="mihomoSecret" type="password" autocomplete="new-password" placeholder="留空则保留现有 Secret">
-      <div class="actions">
-        <button type="submit">保存连接</button>
-        <button id="testMihomo" class="secondary" type="button">测试连接</button>
-        <button id="syncSlots" class="secondary" type="button">同步出口</button>
-      </div>
-    </form>
+  <section id="page-import" class="page"><div class="grid two"><form id="importForm" class="card"><h2>上传 / 粘贴凭据</h2><p class="muted">支持 CPA、sub2api、JSONL 和直接粘贴的 JSON。上传只负责导入，不会替已有凭据换组。</p><label for="importGroup">目标分组</label><select id="importGroup" required></select><label for="credentialFile">选择文件</label><input id="credentialFile" type="file" accept=".json,.jsonl,.ndjson,.txt,application/json,text/plain"><label for="credential">凭据内容</label><textarea id="credential" required spellcheck="false" placeholder='粘贴 sub2api 或 CPA 格式 JSON'></textarea><div class="actions"><button type="button" class="secondary" id="preview">检查格式</button><button type="submit">确认导入</button></div><div id="previewBox" class="preview" hidden></div></form><section class="card"><h2>本地 CPA 凭据</h2><p class="muted">发现 CPA 已有但尚未由 Allocator 管理的 Auth 文件，可选择分组接管。</p><div class="table-wrap"><table><thead><tr><th>文件</th><th>邮箱</th><th>工作区</th><th>状态</th><th>操作</th></tr></thead><tbody id="localRows"><tr><td colspan="5" class="empty">点击“发现本地凭据”加载。</td></tr></tbody></table></div></section></div></section>
 
-    <form id="groupForm" class="card">
-      <h2>创建或更新分组</h2>
-      <label for="groupName">组名</label>
-      <input id="groupName" required placeholder="主力账号">
-      <div class="two-col" style="margin:0">
-        <div><label for="priority">Priority</label><input id="priority" type="number" value="100"></div>
-        <div><label for="listenerPool">Listener Pool</label><input id="listenerPool" value="default" required></div>
-      </div>
-      <label for="shortagePolicy">出口不足策略</label>
-      <select id="shortagePolicy">
-        <option value="reject">返回错误</option>
-        <option value="share_least">共用次数最少的出口</option>
-        <option value="default_route">留空，使用 CPA 默认路由</option>
-      </select>
-      <label><input id="websockets" type="checkbox" checked style="width:auto;min-height:auto"> 默认开启 WebSocket</label>
-      <div class="actions"><button type="submit">保存分组</button></div>
-    </form>
-  </section>
+  <section id="page-config" class="page"><div class="grid two"><section class="card"><div class="section-head"><div><h2>Mihomo 连接</h2><p class="muted">使用现有 Controller，不会额外开启端口。</p></div><button type="button" class="secondary" id="testMihomo">测试连接</button></div><form id="settingsForm"><label for="controllerURL">Controller URL</label><input id="controllerURL" type="url" required placeholder="http://192.168.5.1:9090"><label for="mihomoSecret">Secret</label><input id="mihomoSecret" type="password" autocomplete="new-password" placeholder="留空则保留现有 Secret"><div class="actions"><button type="submit">保存连接</button></div></form><p id="mihomoInfo" class="helper"></p></section><section class="card"><div class="section-head"><div><h2>分组</h2><p class="muted">统一设置优先级、Listener Pool 和出口不足策略。</p></div><button type="button" id="newGroup">新建分组</button></div><div class="table-wrap"><table><thead><tr><th>名称</th><th>优先级</th><th>Pool</th><th>不足策略</th><th>操作</th></tr></thead><tbody id="groupRows"><tr><td colspan="5" class="empty">尚未加载</td></tr></tbody></table></div></section></div><section class="card" style="margin-top:14px"><div class="section-head"><div><h2>Listener / Selector 对应</h2><p class="muted">Selector 从 Mihomo 自动读取，避免手动输入拼写错误。</p></div><button type="button" id="newSlot">新增 Listener</button></div><div class="table-wrap"><table><thead><tr><th>ID</th><th>Listener</th><th>Selector</th><th>Pool</th><th>操作</th></tr></thead><tbody id="configSlotRows"><tr><td colspan="5" class="empty">尚未加载</td></tr></tbody></table></div></section></section>
 
-  <section class="two-col">
-    <form id="slotForm" class="card">
-      <h2>Listener / Selector 对应</h2>
-      <label for="slotID">出口 ID</label>
-      <input id="slotID" required placeholder="slot-01">
-      <label for="listenerURL">Listener URL</label>
-      <input id="listenerURL" required placeholder="socks5://127.0.0.1:21001">
-      <label for="selector">Selector</label>
-      <input id="selector" required placeholder="cpa-01">
-      <label for="slotPool">Listener Pool</label>
-      <input id="slotPool" value="default" required>
-      <div class="actions"><button type="submit">保存出口</button></div>
-    </form>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-    <form id="importForm" class="card">
-      <h2>上传凭据</h2>
-      <p class="muted">支持 JSON、JSONL、TXT 或直接粘贴 sub2api 文档。</p>
-      <label for="importGroup">组名</label>
-      <input id="importGroup" list="groupNames" required placeholder="主力账号">
-      <datalist id="groupNames"></datalist>
-      <label for="credentialFile">选择文件</label>
-      <input id="credentialFile" type="file" accept=".json,.jsonl,.ndjson,.txt,application/json,text/plain">
-      <label for="credential">凭据内容</label>
-      <textarea id="credential" required spellcheck="false" placeholder='{"accounts":[...]}'></textarea>
-      <div class="actions">
-        <button id="preview" class="secondary" type="button">预览</button>
-        <button type="submit">确认上传</button>
-      </div>
-    </form>
-  </section>
-
-  <section class="card" style="margin-bottom:14px">
-    <h2>当前凭据</h2>
-    <div class="table-wrap"><table>
-      <thead><tr><th>显示名称</th><th>分组</th><th>出口</th><th>路由状态</th><th>Auth 文件</th></tr></thead>
-      <tbody id="credentialRows"><tr><td colspan="5" class="empty">尚未加载</td></tr></tbody>
-    </table></div>
-  </section>
-
-  <section class="card">
-    <h2>Listener / Selector</h2>
-    <div class="table-wrap"><table>
-      <thead><tr><th>ID</th><th>Listener</th><th>Selector</th><th>当前节点</th><th>手动切换</th></tr></thead>
-      <tbody id="slotRows"><tr><td colspan="5" class="empty">尚未加载</td></tr></tbody>
-    </table></div>
-  </section>
-
-  <div id="notice" class="notice" role="status" aria-live="polite"></div>
+  <dialog id="credentialDialog" class="dialog"><div class="dialog-head"><h2>编辑凭据</h2><button type="button" class="close" data-close="credentialDialog" aria-label="关闭">×</button></div><form id="credentialEditForm" class="dialog-body"><input id="editIdentity" type="hidden"><label for="editAlias">显示别名</label><input id="editAlias" placeholder="留空使用完整邮箱"><label for="editGroup">分组</label><select id="editGroup" required></select><p class="helper">修改分组会按新分组策略重新写入 CPA Auth；凭据内容本身不会改变。</p><div class="dialog-actions"><button type="button" class="secondary" data-close="credentialDialog">取消</button><button type="submit">保存</button></div><div class="danger-zone"><button type="button" class="danger" id="unmanageCredential">停止管理（保留 CPA Auth）</button></div></form></dialog>
+  <dialog id="groupDialog" class="dialog"><div class="dialog-head"><h2 id="groupDialogTitle">新建分组</h2><button type="button" class="close" data-close="groupDialog" aria-label="关闭">×</button></div><form id="groupForm" class="dialog-body"><input id="groupOriginalName" type="hidden"><label for="groupName">组名</label><input id="groupName" required><div class="grid two"><div><label for="priority">Priority</label><input id="priority" type="number" value="100"></div><div><label for="listenerPool">Listener Pool</label><input id="listenerPool" value="default" required></div></div><label for="shortagePolicy">出口不足策略</label><select id="shortagePolicy"><option value="reject">返回错误</option><option value="share_least">共用次数最少的出口</option><option value="default_route">使用 CPA 默认路由</option></select><label><input id="websockets" type="checkbox" checked style="width:auto;min-height:auto"> 默认开启 WebSocket</label><div class="dialog-actions"><button type="button" class="secondary" data-close="groupDialog">取消</button><button type="submit">保存分组</button></div><div id="groupDeleteZone" class="danger-zone"><button type="button" class="danger" id="deleteGroup">删除分组</button></div></form></dialog>
+  <dialog id="slotDialog" class="dialog"><div class="dialog-head"><h2 id="slotDialogTitle">新增 Listener</h2><button type="button" class="close" data-close="slotDialog" aria-label="关闭">×</button></div><form id="slotForm" class="dialog-body"><label for="slotID">出口 ID</label><input id="slotID" required placeholder="slot-01"><label for="listenerURL">Listener URL</label><input id="listenerURL" required placeholder="socks5://127.0.0.1:21001"><label for="selector">Selector</label><select id="selector" required><option value="">先读取 Mihomo Selector…</option></select><label for="slotPool">Listener Pool</label><input id="slotPool" value="default" required><div class="dialog-actions"><button type="button" class="secondary" data-close="slotDialog">取消</button><button type="submit">保存出口</button></div><div id="slotDeleteZone" class="danger-zone"><button type="button" class="danger" id="deleteSlot">删除出口</button></div></form></dialog>
+  <dialog id="adoptDialog" class="dialog"><div class="dialog-head"><h2>接管本地凭据</h2><button type="button" class="close" data-close="adoptDialog" aria-label="关闭">×</button></div><form id="adoptForm" class="dialog-body"><input id="adoptAuthIndex" type="hidden"><p id="adoptDetails" class="muted"></p><label for="adoptGroup">分组</label><select id="adoptGroup" required></select><div class="dialog-actions"><button type="button" class="secondary" data-close="adoptDialog">取消</button><button type="submit">开始接管</button></div></form></dialog>
 </main>
 <script>
-  const apiBase = '/v0/management/plugins/cpa-route-allocator';
-  const el = id => document.getElementById(id);
-  const keyInput = el('managementKey');
-  let currentState = null;
-  let syncedSlots = {};
-  keyInput.value = sessionStorage.getItem('cpa-route-allocator-key') || '';
-  keyInput.addEventListener('change', () => { sessionStorage.setItem('cpa-route-allocator-key', keyInput.value); loadState(); });
-
-  function show(message, isError = false) {
-    el('notice').className = isError ? 'notice error' : 'notice';
-    el('notice').textContent = typeof message === 'string' ? message : JSON.stringify(message, null, 2);
-  }
-  async function request(path, options = {}) {
-    const headers = { ...(options.headers || {}) };
-    const key = keyInput.value.trim();
-    if (key) headers.Authorization = `Bearer ${key}`;
-    const response = await fetch(apiBase + path, { ...options, headers });
-    const text = await response.text();
-    let body;
-    try { body = JSON.parse(text); } catch { body = { message: text }; }
-    if (!response.ok) throw new Error(body.error || body.message || `HTTP ${response.status}`);
-    return body;
-  }
-  async function run(button, task) {
-    button.disabled = true;
-    const label = button.textContent;
-    button.textContent = '处理中…';
-    try { await task(); } catch (error) { show(error.message, true); } finally { button.disabled = false; button.textContent = label; }
-  }
-  function escapeHTML(value) {
-    return String(value ?? '').replace(/[&<>"]/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[char]));
-  }
-  function renderState(state) {
-    currentState = state;
-    el('credentialCount').textContent = state.credentials?.length ?? 0;
-    el('groupCount').textContent = state.groups?.length ?? 0;
-    el('slotCount').textContent = state.route_slots?.length ?? 0;
-    el('controllerURL').value = state.settings?.mihomo_controller_url || '';
-    el('groupNames').innerHTML = (state.groups || []).map(group => `<option value="${escapeHTML(group.name)}"></option>`).join('');
-    el('credentialRows').innerHTML = (state.credentials || []).length ? state.credentials.map(item => `
-      <tr><td><div class="inline"><input data-alias-for="${escapeHTML(item.identity)}" value="${escapeHTML(item.alias || '')}" placeholder="${escapeHTML(item.email || item.identity.slice(0, 8))}" aria-label="${escapeHTML(item.email || item.identity)} 的显示别名"><button type="button" data-alias-save="${escapeHTML(item.identity)}">保存</button></div></td><td><div class="inline"><select data-group-for="${escapeHTML(item.identity)}" aria-label="${escapeHTML(item.email || item.identity)} 的分组">${(state.groups || []).map(group => `<option value="${escapeHTML(group.name)}" ${group.name === item.group ? 'selected' : ''}>${escapeHTML(group.name)}</option>`).join('')}</select><button type="button" data-group-save="${escapeHTML(item.identity)}">移动</button></div></td>
-      <td><code>${escapeHTML(item.route_slot_id || 'CPA 默认')}</code></td><td>${escapeHTML(item.route_status)}</td><td><code>${escapeHTML(item.auth_file)}</code></td></tr>`).join('')
-      : '<tr><td colspan="5" class="empty">还没有导入凭据</td></tr>';
-    renderSlots();
-  }
-  function renderSlots() {
-    const slots = currentState?.route_slots || [];
-    el('slotRows').innerHTML = slots.length ? slots.map(slot => {
-      const synced = syncedSlots[slot.id] || {};
-      const nodes = synced.nodes || [];
-      const listID = `nodes-${slot.id.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
-      return `<tr><td><code>${escapeHTML(slot.id)}</code></td><td><code>${escapeHTML(slot.listener_url)}</code></td>
-        <td>${escapeHTML(slot.selector)}</td><td>${escapeHTML(synced.current_node || slot.current_node || '未同步')}</td>
-        <td><div class="inline"><input data-node-for="${escapeHTML(slot.id)}" list="${listID}" aria-label="${escapeHTML(slot.id)} 的目标节点"><datalist id="${listID}">${nodes.map(node => `<option value="${escapeHTML(node)}"></option>`).join('')}</datalist><button type="button" data-switch="${escapeHTML(slot.id)}">切换</button></div></td></tr>`;
-    }).join('') : '<tr><td colspan="5" class="empty">还没有配置 Listener / Selector</td></tr>';
-  }
-  async function loadState() {
-    try {
-      const state = await request('/state');
-      renderState(state);
-      el('connectionStatus').className = 'status ok';
-      el('connectionStatus').textContent = '已连接 CPA Management API';
-    } catch (error) {
-      el('connectionStatus').className = 'status error';
-      el('connectionStatus').textContent = 'CPA Management API 未连接';
-      show(`请输入正确的 Management Key：${error.message}`, true);
-    }
-  }
-
-  el('settingsForm').addEventListener('submit', event => { event.preventDefault(); run(event.submitter, async () => {
-    const secret = el('mihomoSecret').value;
-    const body = { mihomo_controller_url: el('controllerURL').value.trim() };
-    if (secret) body.mihomo_secret = secret;
-    const state = await request('/settings', { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
-    el('mihomoSecret').value = ''; renderState(state); show('Mihomo 设置已保存。');
-  }); });
-  el('testMihomo').addEventListener('click', event => run(event.currentTarget, async () => show(await request('/mihomo/status'))));
-  el('syncSlots').addEventListener('click', event => run(event.currentTarget, async () => {
-    const result = await request('/route-slots/sync', { method:'POST' });
-    syncedSlots = Object.fromEntries((result.route_slots || []).map(slot => [slot.route_slot_id, slot]));
-    renderSlots(); show(result);
-  }));
-  el('groupForm').addEventListener('submit', event => { event.preventDefault(); run(event.submitter, async () => {
-    const state = await request('/groups', { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({
-      name:el('groupName').value.trim(), priority:Number(el('priority').value), websockets:el('websockets').checked,
-      listener_pool:el('listenerPool').value.trim(), shortage_policy:el('shortagePolicy').value
-    }) }); renderState(state); show('分组已保存。');
-  }); });
-  el('slotForm').addEventListener('submit', event => { event.preventDefault(); run(event.submitter, async () => {
-    const state = await request('/route-slots', { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({
-      id:el('slotID').value.trim(), name:el('slotID').value.trim(), listener_url:el('listenerURL').value.trim(),
-      selector:el('selector').value.trim(), pool:el('slotPool').value.trim()
-    }) }); renderState(state); show('Listener / Selector 对应已保存。');
-  }); });
-  el('credentialFile').addEventListener('change', async event => {
-    const file = event.target.files?.[0]; if (!file) return;
-    const text = await file.text();
-    if (/\.(jsonl|ndjson|txt)$/i.test(file.name)) {
-      const lines = text.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
-      try { el('credential').value = JSON.stringify(lines.map(line => JSON.parse(line)), null, 2); }
-      catch { el('credential').value = text; show('文件不是有效 JSONL；已按原文载入，请检查格式。', true); }
-    } else { el('credential').value = text; }
-  });
-  async function importRequest(path) {
-    const credential = JSON.parse(el('credential').value);
-    return request(path, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ group:el('importGroup').value.trim(), credential }) });
-  }
-  el('preview').addEventListener('click', event => run(event.currentTarget, async () => show(await importRequest('/import/preview'))));
-  el('importForm').addEventListener('submit', event => { event.preventDefault(); run(event.submitter, async () => {
-    const result = await importRequest('/upload'); show(result); await loadState();
-  }); });
-  el('slotRows').addEventListener('click', event => {
-    const button = event.target.closest('[data-switch]'); if (!button) return;
-    run(button, async () => {
-      const id = button.dataset.switch;
-      const node = el('slotRows').querySelector(`[data-node-for="${CSS.escape(id)}"]`).value.trim();
-      if (!node) throw new Error('请输入或选择目标节点。');
-      const result = await request('/route-slots/select', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({route_slot_id:id,node}) });
-      show(result); await loadState();
-    });
-  });
-  el('credentialRows').addEventListener('click', event => {
-    const aliasButton = event.target.closest('[data-alias-save]');
-    const groupButton = event.target.closest('[data-group-save]');
-    if (aliasButton) run(aliasButton, async () => {
-      const identity = aliasButton.dataset.aliasSave;
-      const alias = el('credentialRows').querySelector(`[data-alias-for="${CSS.escape(identity)}"]`).value;
-      const state = await request('/credentials/alias', { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({identity, alias}) });
-      renderState(state); show('显示别名已更新。');
-    });
-    if (groupButton) run(groupButton, async () => {
-      const identity = groupButton.dataset.groupSave;
-      const group = el('credentialRows').querySelector(`[data-group-for="${CSS.escape(identity)}"]`).value;
-      const state = await request('/credentials/move', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({identity, group}) });
-      renderState(state); show('凭据已移动到新分组。');
-    });
-  });
+  const apiBase='/v0/management/plugins/cpa-route-allocator', el=id=>document.getElementById(id), keyInput=el('managementKey'); let state=null, synced={};
+  keyInput.value=sessionStorage.getItem('cpa-route-allocator-key')||''; keyInput.addEventListener('change',()=>{sessionStorage.setItem('cpa-route-allocator-key',keyInput.value);loadState()});
+  function toast(message,error=false){const node=el('toast');node.textContent=message;node.className='toast'+(error?' error':'')+' show';node.hidden=false;clearTimeout(toast.timer);toast.timer=setTimeout(()=>{node.classList.remove('show');setTimeout(()=>node.hidden=true,220)},3600)}
+  function safeError(error){let text=String(error?.message||error||'操作失败').replace(/\s+/g,' ').trim();return text.length>180?text.slice(0,177)+'…':text}
+  async function request(path,options={}){const headers={...(options.headers||{})};const key=keyInput.value.trim();if(key)headers.Authorization='Bearer '+key;const response=await fetch(apiBase+path,{...options,headers});const text=await response.text();let body={};try{body=JSON.parse(text)}catch{body={message:text}}if(!response.ok)throw new Error(body.error||body.message||`HTTP ${response.status}`);return body}
+  async function run(button,task){if(button)button.disabled=true;try{await task()}catch(error){toast(safeError(error),true)}finally{if(button)button.disabled=false}}
+  const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  function openDialog(id){el(id).showModal()} function closeDialog(id){el(id).close()}
+  function groupOptions(selected=''){return (state?.groups||[]).map(g=>`<option value="${esc(g.name)}" ${g.name===selected?'selected':''}>${esc(g.name)}</option>`).join('')}
+  function renderState(next){state=next;el('credentialCount').textContent=state.credentials?.length||0;el('groupCount').textContent=state.groups?.length||0;el('slotCount').textContent=state.route_slots?.length||0;el('controllerURL').value=state.settings?.mihomo_controller_url||'';el('importGroup').innerHTML=groupOptions();el('editGroup').innerHTML=groupOptions();el('adoptGroup').innerHTML=groupOptions();renderCredentials();renderSlots();renderGroups();}
+  function renderCredentials(){const rows=state?.credentials||[];el('credentialRows').innerHTML=rows.length?rows.map(c=>`<tr><td><strong>${esc(c.alias||c.email||c.identity)}</strong><div class="helper"><code>${esc(c.auth_file)}</code></div></td><td><span class="ellipsis" title="${esc(c.email||c.identity)}">${esc(c.email||c.identity)}</span>${c.workspace_id?`<div class="helper">工作区 ${esc(c.workspace_id)}</div>`:''}</td><td>${esc(c.group)}</td><td>${esc(c.route_slot_id||'CPA 默认')}</td><td><span class="tag ${c.route_status==='assigned'?'ok':'warn'}">${esc(c.route_status)}</span></td><td><button type="button" class="secondary" data-edit-credential="${esc(c.identity)}">编辑</button></td></tr>`).join(''):'<tr><td colspan="6" class="empty">还没有由 Allocator 管理的凭据。</td></tr>'}
+  function renderSlots(){const rows=state?.route_slots||[];const render=(slot,config)=>{const sync=synced[slot.id]||{},nodes=sync.nodes||[];const opts=nodes.map(n=>`<option value="${esc(n)}" ${n===(sync.current_node||slot.current_node)?'selected':''}>${esc(n)}</option>`).join('');return `<tr><td><strong>${esc(slot.name||slot.id)}</strong><div class="helper"><code>${esc(slot.id)}</code></div></td><td><span class="ellipsis" title="${esc(slot.listener_url)}"><code>${esc(slot.listener_url)}</code></span></td><td>${esc(slot.selector)}</td>${config?`<td>${esc(slot.pool)}</td><td><div class="row-actions"><button type="button" class="secondary" data-edit-slot="${esc(slot.id)}">编辑</button><button type="button" class="danger" data-delete-slot="${esc(slot.id)}">删除</button></div></td>`:`<td><select data-node-for="${esc(slot.id)}" ${opts?'':'disabled'}><option value="">${opts?'选择节点':'请先同步'}</option>${opts}</select></td><td><button type="button" class="secondary" data-switch="${esc(slot.id)}">切换</button></td>`}</tr>`};el('slotRows').innerHTML=rows.length?rows.map(s=>render(s,false)).join(''):'<tr><td colspan="6" class="empty">还没有配置 Listener；去配置页添加一个出口。</td></tr>';el('configSlotRows').innerHTML=rows.length?rows.map(s=>render(s,true)).join(''):'<tr><td colspan="5" class="empty">还没有配置 Listener。</td></tr>'}
+  function renderGroups(){const rows=state?.groups||[];el('groupRows').innerHTML=rows.length?rows.map(g=>`<tr><td><strong>${esc(g.name)}</strong></td><td>${esc(g.priority)}</td><td>${esc(g.listener_pool)}</td><td>${esc(g.shortage_policy)}</td><td><button type="button" class="secondary" data-edit-group="${esc(g.name)}">编辑</button></td></tr>`).join(''):'<tr><td colspan="5" class="empty">还没有分组，请新建一个。</td></tr>'}
+  async function loadState(){try{const result=await request('/state');renderState(result);el('connectionStatus').className='status ok';el('connectionStatus').textContent='已连接 CPA Management API';}catch(error){el('connectionStatus').className='status error';el('connectionStatus').textContent='CPA Management API 未连接';toast('请输入正确的 Management Key',true)}}
+  async function loadLocal(){await run(null,async()=>{const result=await request('/credentials/local');const rows=result.credentials||[];el('localRows').innerHTML=rows.length?rows.map(c=>`<tr><td><code>${esc(c.auth_file)}</code></td><td>${esc(c.email||'—')}</td><td>${esc(c.workspace_id||'—')}</td><td><span class="tag ${c.managed?'ok':''}">${c.managed?'已管理':'可接管'}</span></td><td>${c.managed?'—':`<button type="button" class="secondary" data-adopt="${esc(c.auth_index)}" data-details="${esc((c.email||c.auth_file)+' · '+(c.workspace_id||'无工作区'))}">接管</button>`}</td></tr>`).join(''):'<tr><td colspan="5" class="empty">没有发现可接管的本地凭据。</td></tr>';toast(`发现 ${rows.length} 个本地凭据`)})}
+  async function loadSelectors(current=''){const select=el('selector');select.innerHTML='<option value="">正在读取 Mihomo Selector…</option>';try{const result=await request('/mihomo/selectors');const selectors=result.selectors||[];select.innerHTML=selectors.length?selectors.map(s=>`<option value="${esc(s.name)}" ${s.name===current?'selected':''}>${esc(s.name)}</option>`).join(''):'<option value="">未发现 Selector</option>';if(!selectors.length)toast('未发现 Mihomo Selector，请先检查连接',true)}catch(error){select.innerHTML='<option value="">读取失败，请先测试连接</option>';toast(safeError(error),true)}}
+  function editCredential(identity){const c=(state.credentials||[]).find(x=>x.identity===identity);if(!c)return;el('editIdentity').value=c.identity;el('editAlias').value=c.alias||'';el('editGroup').innerHTML=groupOptions(c.group);openDialog('credentialDialog')}
+  function editGroup(name){const g=(state.groups||[]).find(x=>x.name===name);if(!g)return;el('groupDialogTitle').textContent='编辑分组';el('groupOriginalName').value=g.name;el('groupName').value=g.name;el('priority').value=g.priority;el('listenerPool').value=g.listener_pool;el('shortagePolicy').value=g.shortage_policy;el('websockets').checked=!!g.websockets;el('groupDeleteZone').hidden=false;openDialog('groupDialog')}
+  function newGroup(){el('groupDialogTitle').textContent='新建分组';el('groupOriginalName').value='';el('groupForm').reset();el('priority').value=100;el('listenerPool').value='default';el('shortagePolicy').value='reject';el('websockets').checked=true;el('groupDeleteZone').hidden=true;openDialog('groupDialog')}
+  function editSlot(id){const s=(state.route_slots||[]).find(x=>x.id===id);if(!s)return;el('slotDialogTitle').textContent='编辑 Listener';el('slotID').value=s.id;el('slotID').readOnly=true;el('listenerURL').value=s.listener_url;el('slotPool').value=s.pool;el('slotDeleteZone').hidden=false;openDialog('slotDialog');loadSelectors(s.selector)}
+  function newSlot(){el('slotDialogTitle').textContent='新增 Listener';el('slotForm').reset();el('slotID').readOnly=false;el('slotPool').value='default';el('slotDeleteZone').hidden=true;openDialog('slotDialog');loadSelectors()}
+  document.querySelectorAll('.nav button').forEach(button=>button.addEventListener('click',()=>{document.querySelectorAll('.nav button').forEach(b=>b.setAttribute('aria-selected','false'));document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));button.setAttribute('aria-selected','true');el('page-'+button.dataset.page).classList.add('active')}));
+  document.addEventListener('click',event=>{const close=event.target.closest('[data-close]');if(close)closeDialog(close.dataset.close);const edit=event.target.closest('[data-edit-credential]');if(edit)editCredential(edit.dataset.editCredential);const eg=event.target.closest('[data-edit-group]');if(eg)editGroup(eg.dataset.editGroup);const es=event.target.closest('[data-edit-slot]');if(es)editSlot(es.dataset.editSlot);const adopt=event.target.closest('[data-adopt]');if(adopt){el('adoptAuthIndex').value=adopt.dataset.adopt;el('adoptDetails').textContent=adopt.dataset.details;openDialog('adoptDialog')} });
+  el('refresh').addEventListener('click',e=>run(e.currentTarget,async()=>{await loadState();toast('已刷新')}));el('adoptOpen').addEventListener('click',loadLocal);
+  el('settingsForm').addEventListener('submit',e=>{e.preventDefault();run(e.submitter,async()=>{const body={mihomo_controller_url:el('controllerURL').value.trim()};const secret=el('mihomoSecret').value;if(secret)body.mihomo_secret=secret;renderState(await request('/settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}));el('mihomoSecret').value='';toast('Mihomo 连接已保存')})});
+  el('testMihomo').addEventListener('click',e=>run(e.currentTarget,async()=>{const result=await request('/mihomo/status');el('mihomoInfo').textContent=`已连接 · ${result.version||'未知版本'}`;toast('Mihomo 连接正常')}));
+  el('syncSlots').addEventListener('click',e=>run(e.currentTarget,async()=>{const result=await request('/route-slots/sync',{method:'POST'});synced=Object.fromEntries((result.route_slots||[]).map(s=>[s.route_slot_id,s]));renderSlots();const errors=(result.route_slots||[]).filter(s=>s.error).length;toast(errors?`已同步，${errors} 个出口读取失败`:`已同步 ${(result.route_slots||[]).length} 个出口`)}));
+  el('newGroup').addEventListener('click',newGroup);el('newSlot').addEventListener('click',newSlot);
+  el('groupForm').addEventListener('submit',e=>{e.preventDefault();run(e.submitter,async()=>{const body={original_name:el('groupOriginalName').value.trim()||undefined,name:el('groupName').value.trim(),priority:Number(el('priority').value),websockets:el('websockets').checked,listener_pool:el('listenerPool').value.trim(),shortage_policy:el('shortagePolicy').value};renderState(await request('/groups',{method:el('groupOriginalName').value?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}));closeDialog('groupDialog');toast('分组已保存')})});
+  el('deleteGroup').addEventListener('click',e=>run(e.currentTarget,async()=>{if(!confirm('确认删除这个分组？分组必须为空。'))return;renderState(await request('/groups',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:el('groupOriginalName').value})}));closeDialog('groupDialog');toast('分组已删除')}));
+  el('slotForm').addEventListener('submit',e=>{e.preventDefault();run(e.submitter,async()=>{const body={id:el('slotID').value.trim(),name:el('slotID').value.trim(),listener_url:el('listenerURL').value.trim(),selector:el('selector').value,pool:el('slotPool').value.trim()};renderState(await request('/route-slots',{method:el('slotID').readOnly?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}));closeDialog('slotDialog');toast('Listener 已保存')})});
+  el('deleteSlot').addEventListener('click',e=>run(e.currentTarget,async()=>{if(!confirm('确认删除这个出口？仍被凭据使用时无法删除。'))return;renderState(await request('/route-slots',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:el('slotID').value})}));closeDialog('slotDialog');toast('出口已删除')}));
+  el('slotRows').addEventListener('click',e=>{const b=e.target.closest('[data-switch]');if(!b)return;run(b,async()=>{const select=el('slotRows').querySelector(`[data-node-for="${CSS.escape(b.dataset.switch)}"]`);if(!select||!select.value)throw new Error('请先同步并选择节点');await request('/route-slots/select',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({route_slot_id:b.dataset.switch,node:select.value})});await loadState();toast('节点已切换')})});
+  el('configSlotRows').addEventListener('click',e=>{const b=e.target.closest('[data-delete-slot]');if(b){el('slotID').value=b.dataset.deleteSlot;el('deleteSlot').click()}});
+  el('credentialRows').addEventListener('click',e=>{const b=e.target.closest('[data-edit-credential]');if(b)editCredential(b.dataset.editCredential)});
+  el('credentialEditForm').addEventListener('submit',e=>{e.preventDefault();run(e.submitter,async()=>{const identity=el('editIdentity').value;const c=(state.credentials||[]).find(x=>x.identity===identity);if(el('editAlias').value.trim()!==(c?.alias||''))await request('/credentials/alias',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({identity,alias:el('editAlias').value.trim()})});if(el('editGroup').value!==(c?.group||''))renderState(await request('/credentials/move',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({identity,group:el('editGroup').value})}));else await loadState();closeDialog('credentialDialog');toast('凭据已保存')})});
+  el('unmanageCredential').addEventListener('click',e=>run(e.currentTarget,async()=>{if(!confirm('停止管理后会保留 CPA Auth 文件，确认继续？'))return;await request('/credentials/managed',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({identity:el('editIdentity').value})});closeDialog('credentialDialog');await loadState();toast('已停止管理，CPA Auth 已保留')}));
+  el('credentialFile').addEventListener('change',async e=>{const file=e.target.files?.[0];if(file)el('credential').value=await file.text()});
+  async function importRequest(path){let credential;try{credential=JSON.parse(el('credential').value)}catch{throw new Error('凭据内容不是有效 JSON')};return request(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({group:el('importGroup').value,credential})})}
+  el('preview').addEventListener('click',e=>run(e.currentTarget,async()=>{const result=await importRequest('/import/preview');const rejected=(result.items||[]).filter(x=>x.action==='reject_group_change').length;el('previewBox').hidden=false;el('previewBox').textContent=`检测到 ${result.count||0} 个凭据：新增 ${(result.items||[]).filter(x=>x.action==='create').length}，更新 ${(result.items||[]).filter(x=>x.action==='update').length}，冲突 ${rejected}。`;toast('格式检查完成') }));
+  el('importForm').addEventListener('submit',e=>{e.preventDefault();run(e.submitter,async()=>{const result=await importRequest('/upload');el('previewBox').hidden=true;await loadState();toast(`已导入 ${result.imported||0} 个，更新 ${result.updated||0} 个`)})});
+  el('localRows').addEventListener('click',e=>{const b=e.target.closest('[data-adopt]');if(!b)return;el('adoptAuthIndex').value=b.dataset.adopt;el('adoptDetails').textContent=b.dataset.details;el('adoptGroup').innerHTML=groupOptions();openDialog('adoptDialog')});
+  el('adoptForm').addEventListener('submit',e=>{e.preventDefault();run(e.submitter,async()=>{await request('/credentials/adopt',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({auth_index:el('adoptAuthIndex').value,group:el('adoptGroup').value})});closeDialog('adoptDialog');await loadState();await loadLocal();toast('本地凭据已接管')})});
+  document.querySelectorAll('dialog').forEach(dialog=>dialog.addEventListener('click',e=>{if(e.target===dialog)dialog.close()}));
   loadState();
-</script>
-</body>
-</html>
+</script></body></html>
