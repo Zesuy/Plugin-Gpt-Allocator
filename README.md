@@ -12,8 +12,11 @@ The plugin runs inside CLIProxyAPI. It reuses the existing CPA port and Manageme
 - atomic local state with Mihomo secret redaction
 - initial sub2api/CPA-style JSON discovery and conversion
 - stable identity using provider, full email, account, and workspace information
+- CPA Auth persistence through `host.auth.save`
+- idempotent updates that keep the original group and route
+- LRU free-slot assignment plus share-least, reject, and default-route shortage policies
 
-Credential persistence, route allocation, and live Mihomo reconciliation are the next milestones.
+Live Mihomo reconciliation and the full management UI are the next milestones.
 
 ## Build
 
@@ -69,6 +72,8 @@ PUT  /v0/management/plugins/cpa-route-allocator/settings
 PUT  /v0/management/plugins/cpa-route-allocator/groups
 PUT  /v0/management/plugins/cpa-route-allocator/route-slots
 POST /v0/management/plugins/cpa-route-allocator/import/preview
+POST /v0/management/plugins/cpa-route-allocator/upload
+POST /v0/management/plugins/cpa-route-allocator/import
 ```
 
 Management routes use the normal CPA Management Key.

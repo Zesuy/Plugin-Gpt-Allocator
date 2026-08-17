@@ -44,9 +44,8 @@ func visit(value any, result *[]Credential, seen map[string]struct{}) {
 		}
 	case map[string]any:
 		if converted, ok := convert(typed); ok {
-			fingerprint := secretFingerprint(converted.Auth)
-			if _, exists := seen[fingerprint]; !exists {
-				seen[fingerprint] = struct{}{}
+			if _, exists := seen[converted.Identity]; !exists {
+				seen[converted.Identity] = struct{}{}
 				*result = append(*result, converted)
 			}
 			return

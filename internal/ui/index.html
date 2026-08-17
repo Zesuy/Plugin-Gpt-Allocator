@@ -46,6 +46,7 @@
     <label for="credential">凭据 JSON</label>
     <textarea id="credential" spellcheck="false" placeholder='{"accounts":[...]}'></textarea>
     <button id="preview">预览导入</button>
+    <button id="upload">确认上传</button>
     <div id="notice" class="notice" role="status"></div>
   </section>
 </main>
@@ -90,6 +91,25 @@
         body: JSON.stringify({ group: document.querySelector('#group').value.trim(), credential })
       });
       notice.textContent = JSON.stringify(result, null, 2);
+    } catch (error) {
+      notice.className = 'notice error';
+      notice.textContent = error.message;
+    } finally { button.disabled = false; }
+  });
+  document.querySelector('#upload').addEventListener('click', async (event) => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    notice.className = 'notice';
+    notice.textContent = '正在写入 CPA…';
+    try {
+      const credential = JSON.parse(document.querySelector('#credential').value);
+      const result = await request('/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ group: document.querySelector('#group').value.trim(), credential })
+      });
+      notice.textContent = JSON.stringify(result, null, 2);
+      await loadState();
     } catch (error) {
       notice.className = 'notice error';
       notice.textContent = error.message;

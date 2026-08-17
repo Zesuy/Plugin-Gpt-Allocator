@@ -4,6 +4,13 @@ import "time"
 
 const CurrentStateVersion = 1
 
+const (
+	RouteStatusAssigned = "assigned"
+	RouteStatusShared   = "shared"
+	RouteStatusDefault  = "default_route"
+	RouteStatusPending  = "pending"
+)
+
 type ShortagePolicy string
 
 const (

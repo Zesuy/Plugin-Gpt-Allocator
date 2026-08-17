@@ -43,9 +43,9 @@ func TestParseSub2APIAccounts(t *testing.T) {
 
 func TestParseKeepsSameEmailDifferentWorkspace(t *testing.T) {
 	raw := json.RawMessage(`[
-  {"access_token":"one","email":"alice@example.com","account_id":"account","workspace_id":"one"},
-  {"access_token":"two","email":"alice@example.com","account_id":"account","workspace_id":"two"}
-]`)
+	  {"access_token":"shared","email":"alice@example.com","account_id":"account","workspace_id":"one"},
+	  {"access_token":"shared","email":"alice@example.com","account_id":"account","workspace_id":"two"}
+	]`)
 	got, err := Parse(raw)
 	if err != nil {
 		t.Fatal(err)
