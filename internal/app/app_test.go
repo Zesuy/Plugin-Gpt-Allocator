@@ -561,6 +561,26 @@ func TestCredentialStatusDelegatesToCPA(t *testing.T) {
 	}
 }
 
+func TestCPAManagementBaseURLFollowsManagementOrigin(t *testing.T) {
+	previousURL, previousExplicit := cpaManagementURL, cpaManagementURLExplicit
+	defer func() {
+		cpaManagementURL = previousURL
+		cpaManagementURLExplicit = previousExplicit
+	}()
+	cpaManagementURL = "http://127.0.0.1:8317"
+	cpaManagementURLExplicit = false
+	if got := cpaManagementBaseURL(http.Header{"X-CPA-Route-Allocator-Origin": []string{"http://192.168.5.220:8317"}}); got != "http://192.168.5.220:8317" {
+		t.Fatalf("origin-derived CPA URL = %q", got)
+	}
+	if got := cpaManagementBaseURL(http.Header{"Host": []string{"192.168.5.220:8317"}}); got != "http://192.168.5.220:8317" {
+		t.Fatalf("host-derived CPA URL = %q", got)
+	}
+	cpaManagementURLExplicit = true
+	if got := cpaManagementBaseURL(http.Header{"Origin": []string{"http://192.168.5.220:8317"}}); got != "http://127.0.0.1:8317" {
+		t.Fatalf("explicit CPA URL was not preserved: %q", got)
+	}
+}
+
 func TestManagementCRUDAndAdoptLocalCredential(t *testing.T) {
 	store := state.New(filepath.Join(t.TempDir(), "state.json"))
 	host := newRecordingHost()

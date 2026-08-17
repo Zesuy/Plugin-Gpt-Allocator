@@ -84,7 +84,7 @@ func (a *App) checkCredentialQuota(body []byte, headers http.Header) (management
 		}
 		raw, callErr := a.host.Call("host.http.do", map[string]any{
 			"method": http.MethodPost,
-			"url":    strings.TrimRight(cpaManagementURL, "/") + "/v0/management/api-call",
+			"url":    cpaManagementBaseURL(headers) + "/v0/management/api-call",
 			"headers": http.Header{
 				"Authorization": []string{authorization},
 				"Content-Type":  []string{"application/json"},

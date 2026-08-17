@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -15,6 +16,7 @@ import (
 // local management listener. The browser's Management Key is forwarded for
 // this one status request and is never persisted by the plugin.
 var cpaManagementURL = "http://127.0.0.1:8317"
+var cpaManagementURLExplicit bool
 
 type hostHTTPResponse struct {
 	StatusCode int         `json:"StatusCode"`
@@ -25,7 +27,51 @@ type hostHTTPResponse struct {
 func init() {
 	if value := strings.TrimRight(strings.TrimSpace(os.Getenv("CPA_ROUTE_ALLOCATOR_CPA_URL")), "/"); value != "" {
 		cpaManagementURL = value
+		cpaManagementURLExplicit = true
 	}
+}
+
+// cpaManagementBaseURL follows the address used to reach the plugin when the
+// deployment did not explicitly configure CPA_ROUTE_ALLOCATOR_CPA_URL. This
+// matters when CPA binds only to a LAN address (for example 192.168.x.x) and
+// 127.0.0.1 is another service or not reachable from the plugin host.
+func cpaManagementBaseURL(headers http.Header) string {
+	if cpaManagementURLExplicit {
+		return strings.TrimRight(cpaManagementURL, "/")
+	}
+	for _, header := range []string{"X-CPA-Route-Allocator-Origin", "Origin", "Referer"} {
+		value := strings.TrimSpace(headerValue(headers, header))
+		if value == "" {
+			continue
+		}
+		parsed, err := url.Parse(value)
+		if err == nil && parsed.Scheme != "" && parsed.Host != "" {
+			return parsed.Scheme + "://" + parsed.Host
+		}
+	}
+	for _, header := range []string{"X-Forwarded-Host", "Host"} {
+		host := strings.TrimSpace(headerValue(headers, header))
+		if host == "" {
+			continue
+		}
+		if !strings.Contains(host, ":") {
+			host += ":8317"
+		}
+		return "http://" + host
+	}
+	return strings.TrimRight(cpaManagementURL, "/")
+}
+
+func headerValue(headers http.Header, name string) string {
+	if value := headers.Get(name); value != "" {
+		return value
+	}
+	for key, values := range headers {
+		if strings.EqualFold(key, name) && len(values) > 0 {
+			return values[0]
+		}
+	}
+	return ""
 }
 
 func (a *App) setCredentialStatus(body []byte, requestHeaders http.Header) (managementResponse, error) {
@@ -62,7 +108,7 @@ func (a *App) setCredentialStatus(body []byte, requestHeaders http.Header) (mana
 	}
 	request := map[string]any{
 		"method": http.MethodPatch,
-		"url":    strings.TrimRight(cpaManagementURL, "/") + "/v0/management/auth-files/status",
+		"url":    cpaManagementBaseURL(requestHeaders) + "/v0/management/auth-files/status",
 		"headers": http.Header{
 			"Authorization": []string{authorization},
 			"Content-Type":  []string{"application/json"},
@@ -78,6 +124,16 @@ func (a *App) setCredentialStatus(body []byte, requestHeaders http.Header) (mana
 		return managementResponse{}, upstreamError("decode CPA Auth status response: " + err.Error())
 	}
 	if result.StatusCode < 200 || result.StatusCode >= 300 {
+		detail := ""
+		var apiError struct {
+			Error string `json:"error"`
+		}
+		if json.Unmarshal(result.Body, &apiError) == nil {
+			detail = strings.TrimSpace(apiError.Error)
+		}
+		if detail != "" {
+			return managementResponse{}, upstreamError(fmt.Sprintf("CPA Auth status returned HTTP %d: %s", result.StatusCode, detail))
+		}
 		return managementResponse{}, upstreamError(fmt.Sprintf("CPA Auth status returned HTTP %d", result.StatusCode))
 	}
 	updated, err := a.store.Update(func(state *model.State) error {
