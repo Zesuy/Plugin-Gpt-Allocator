@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/zesuy/cpa-route-allocator/internal/allocator"
@@ -32,9 +33,11 @@ type Host interface {
 }
 
 type App struct {
-	store *state.Store
-	host  Host
-	usage usageStats
+	store        *state.Store
+	host         Host
+	usage        usageStats
+	nodeStats    nodeStatsStore
+	routeHistory routeHistory
 }
 
 type registration struct {
@@ -203,16 +206,18 @@ type routeSlotDeleteInput struct {
 }
 
 type syncedRouteSlot struct {
-	RouteSlotID string                     `json:"route_slot_id"`
-	Selector    string                     `json:"selector"`
-	CurrentNode string                     `json:"current_node,omitempty"`
-	Nodes       []string                   `json:"nodes,omitempty"`
-	NodeHealth  map[string]mihomo.Selector `json:"node_health,omitempty"`
-	Error       string                     `json:"error,omitempty"`
+	RouteSlotID   string                     `json:"route_slot_id"`
+	Selector      string                     `json:"selector"`
+	CurrentNode   string                     `json:"current_node,omitempty"`
+	Nodes         []string                   `json:"nodes,omitempty"`
+	NodeHealth    map[string]mihomo.Selector `json:"node_health,omitempty"`
+	NodeStats     map[string]nodeStatsView   `json:"node_stats,omitempty"`
+	ListenerProbe *listenerProbe             `json:"listener_probe,omitempty"`
+	Error         string                     `json:"error,omitempty"`
 }
 
 func New(store *state.Store, host Host) *App {
-	return &App{store: store, host: host}
+	return &App{store: store, host: host, routeHistory: newRouteHistory()}
 }
 
 func (a *App) Handle(method string, raw []byte) (json.RawMessage, error) {
@@ -271,6 +276,10 @@ func managementRoutes() managementRegistration {
 			{Method: http.MethodGet, Path: "/plugins/" + PluginName + "/stats", Description: "Read process-local usage summaries split by transport."},
 			{Method: http.MethodGet, Path: "/plugins/" + PluginName + "/mihomo/selectors", Description: "List Selector groups available from Mihomo."},
 			{Method: http.MethodPost, Path: "/plugins/" + PluginName + "/route-slots/sync", Description: "Refresh Selector nodes and current selections from Mihomo."},
+			{Method: http.MethodGet, Path: "/plugins/" + PluginName + "/route-slots/diagnostics", Description: "Read per-Listener and per-node diagnostics."},
+			{Method: http.MethodPost, Path: "/plugins/" + PluginName + "/route-slots/diagnostics", Description: "Refresh per-Listener and per-node diagnostics."},
+			{Method: http.MethodPost, Path: "/plugins/" + PluginName + "/route-slots/deduplicate/preview", Description: "Preview manual duplicate public-IP removal."},
+			{Method: http.MethodPost, Path: "/plugins/" + PluginName + "/route-slots/deduplicate", Description: "Apply manual duplicate public-IP removal with verification and rollback."},
 			{Method: http.MethodPost, Path: "/plugins/" + PluginName + "/route-slots/select", Description: "Manually switch a route slot Selector node."},
 			{Method: http.MethodPut, Path: "/plugins/" + PluginName + "/credentials/alias", Description: "Override the display alias for a credential."},
 			{Method: http.MethodPost, Path: "/plugins/" + PluginName + "/credentials/move", Description: "Move an existing credential to another group."},
@@ -334,6 +343,14 @@ func (a *App) handleManagement(raw []byte) (json.RawMessage, error) {
 		response, err = a.mihomoSelectors()
 	case req.Method == http.MethodPost && path == managementPrefix+"/route-slots/sync":
 		response, err = a.syncRouteSlots()
+	case req.Method == http.MethodGet && path == managementPrefix+"/route-slots/diagnostics":
+		response, err = a.syncRouteSlots()
+	case req.Method == http.MethodPost && path == managementPrefix+"/route-slots/diagnostics":
+		response, err = a.syncRouteSlots()
+	case req.Method == http.MethodPost && path == managementPrefix+"/route-slots/deduplicate/preview":
+		response, err = a.deduplicatePreview(req.Body)
+	case req.Method == http.MethodPost && path == managementPrefix+"/route-slots/deduplicate":
+		response, err = a.deduplicate(req.Body)
 	case req.Method == http.MethodPost && path == managementPrefix+"/route-slots/select":
 		response, err = a.selectRouteNode(req.Body)
 	case req.Method == http.MethodPut && path == managementPrefix+"/credentials/alias":
@@ -565,6 +582,7 @@ func (a *App) syncRouteSlots() (managementResponse, error) {
 			result.CurrentNode = selector.Now
 			result.Nodes = selector.All
 			result.NodeHealth = make(map[string]mihomo.Selector)
+			result.NodeStats = make(map[string]nodeStatsView)
 			for _, node := range selector.All {
 				if health, ok := proxies[node]; ok && (health.Alive != nil || len(health.History) > 0) {
 					result.NodeHealth[node] = mihomo.Selector{
@@ -574,15 +592,35 @@ func (a *App) syncRouteSlots() (managementResponse, error) {
 						History: health.History,
 					}
 				}
+				result.NodeStats[node] = a.nodeStats.snapshot(slot.ID, node)
 			}
 			currentNodes[slot.ID] = selector.Now
 		}
 		results = append(results, result)
 	}
+	var probeWait sync.WaitGroup
+	for index := range results {
+		if strings.TrimSpace(value.RouteSlots[index].ListenerURL) == "" {
+			continue
+		}
+		probeWait.Add(1)
+		go func(index int, listenerURL string) {
+			defer probeWait.Done()
+			probeCtx, probeCancel := context.WithTimeout(ctx, 10*time.Second)
+			defer probeCancel()
+			probe := probeListener(probeCtx, listenerURL)
+			results[index].ListenerProbe = &probe
+		}(index, value.RouteSlots[index].ListenerURL)
+	}
+	probeWait.Wait()
 	if len(currentNodes) > 0 {
 		if _, err := a.store.Update(func(state *model.State) error {
 			for index := range state.RouteSlots {
 				if node, ok := currentNodes[state.RouteSlots[index].ID]; ok {
+					if state.RouteSlots[index].CurrentNode != node {
+						a.routeHistory.record(state.RouteSlots[index].ID, node, time.Now().UTC())
+						state.RouteSlots[index].NodeChangedAt = time.Now().UTC()
+					}
 					state.RouteSlots[index].CurrentNode = node
 				}
 			}
@@ -641,6 +679,7 @@ func (a *App) selectRouteNode(body []byte) (managementResponse, error) {
 		for index := range state.RouteSlots {
 			if state.RouteSlots[index].ID == input.RouteSlotID {
 				state.RouteSlots[index].CurrentNode = input.Node
+				state.RouteSlots[index].NodeChangedAt = time.Now().UTC()
 				return nil
 			}
 		}
@@ -648,6 +687,7 @@ func (a *App) selectRouteNode(body []byte) (managementResponse, error) {
 	}); err != nil {
 		return managementResponse{}, err
 	}
+	a.routeHistory.record(input.RouteSlotID, input.Node, time.Now().UTC())
 	return jsonResponse(http.StatusOK, map[string]any{
 		"route_slot_id": input.RouteSlotID,
 		"selector":      selectedSlot.Selector,

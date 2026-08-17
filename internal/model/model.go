@@ -48,6 +48,7 @@ type RouteSlot struct {
 	Selector       string    `json:"selector"`
 	Pool           string    `json:"pool"`
 	CurrentNode    string    `json:"current_node,omitempty"`
+	NodeChangedAt  time.Time `json:"node_changed_at,omitempty"`
 	LastAssignedAt time.Time `json:"last_assigned_at,omitempty"`
 }
 

@@ -10,8 +10,14 @@ import (
 )
 
 type usageRecord struct {
+	Provider        string        `json:"Provider"`
 	ExecutorType    string        `json:"ExecutorType"`
+	AuthID          string        `json:"AuthID"`
+	AuthIndex       string        `json:"AuthIndex"`
+	AuthType        string        `json:"AuthType"`
+	Model           string        `json:"Model"`
 	Generate        bool          `json:"Generate"`
+	RequestedAt     time.Time     `json:"RequestedAt"`
 	Latency         time.Duration `json:"Latency"`
 	TTFT            time.Duration `json:"TTFT"`
 	Failed          bool          `json:"Failed"`
@@ -21,7 +27,8 @@ type usageRecord struct {
 }
 
 type usageFailure struct {
-	StatusCode int `json:"StatusCode"`
+	StatusCode int    `json:"StatusCode"`
+	Body       string `json:"Body"`
 }
 
 type usageDetail struct {
@@ -193,5 +200,10 @@ func (a *App) handleUsage(raw []byte) error {
 		return err
 	}
 	a.usage.add(record)
+	if value, err := a.store.Load(); err == nil {
+		if slotID, node, ok := a.resolveUsageRoute(value, record); ok {
+			a.nodeStats.add(slotID, node, classifyTransport(record), classifyNodeResult(record), record)
+		}
+	}
 	return nil
 }

@@ -96,6 +96,10 @@ GET  /v0/management/plugins/cpa-route-allocator/network/public-ip
 GET  /v0/management/plugins/cpa-route-allocator/stats
 GET  /v0/management/plugins/cpa-route-allocator/mihomo/selectors
 POST /v0/management/plugins/cpa-route-allocator/route-slots/sync
+GET  /v0/management/plugins/cpa-route-allocator/route-slots/diagnostics
+POST /v0/management/plugins/cpa-route-allocator/route-slots/diagnostics
+POST /v0/management/plugins/cpa-route-allocator/route-slots/deduplicate/preview
+POST /v0/management/plugins/cpa-route-allocator/route-slots/deduplicate
 POST /v0/management/plugins/cpa-route-allocator/route-slots/select
 POST /v0/management/plugins/cpa-route-allocator/import/preview
 POST /v0/management/plugins/cpa-route-allocator/upload
