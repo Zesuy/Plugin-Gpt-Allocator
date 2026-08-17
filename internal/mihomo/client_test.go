@@ -19,6 +19,11 @@ func TestClientReadsAndSwitchesSelector(t *testing.T) {
 			_ = json.NewEncoder(writer).Encode(Version{Version: "1.19.0"})
 		case request.Method == http.MethodGet && request.URL.Path == "/proxies/🤖 CPA-01":
 			_ = json.NewEncoder(writer).Encode(Selector{Name: "🤖 CPA-01", Type: "Selector", Now: "JP-01", All: []string{"JP-01", "SG-01"}})
+		case request.Method == http.MethodGet && request.URL.Path == "/proxies":
+			_ = json.NewEncoder(writer).Encode(map[string]any{"proxies": map[string]any{
+				"DIRECT":   Selector{Name: "DIRECT", Type: "Direct"},
+				"🤖 CPA-01": Selector{Name: "🤖 CPA-01", Type: "Selector", Now: "JP-01", All: []string{"JP-01", "SG-01"}},
+			}})
 		case request.Method == http.MethodPut && request.URL.Path == "/proxies/🤖 CPA-01":
 			var input map[string]string
 			_ = json.NewDecoder(request.Body).Decode(&input)
@@ -41,6 +46,10 @@ func TestClientReadsAndSwitchesSelector(t *testing.T) {
 	selector, err := client.Selector(context.Background(), "🤖 CPA-01")
 	if err != nil || selector.Now != "JP-01" || len(selector.All) != 2 {
 		t.Fatalf("selector=%#v err=%v", selector, err)
+	}
+	selectors, err := client.Selectors(context.Background())
+	if err != nil || len(selectors) != 1 || selectors[0].Name != "🤖 CPA-01" {
+		t.Fatalf("selectors=%#v err=%v", selectors, err)
 	}
 	if err := client.Select(context.Background(), "🤖 CPA-01", "SG-01"); err != nil {
 		t.Fatal(err)

@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 )
@@ -32,6 +33,10 @@ type Selector struct {
 	Type string   `json:"type"`
 	Now  string   `json:"now"`
 	All  []string `json:"all"`
+}
+
+type proxiesResponse struct {
+	Proxies map[string]Selector `json:"proxies"`
 }
 
 func New(controllerURL, secret string, httpClient *http.Client) (*Client, error) {
@@ -70,6 +75,27 @@ func (c *Client) Selector(ctx context.Context, name string) (Selector, error) {
 		return Selector{}, err
 	}
 	return result, nil
+}
+
+func (c *Client) Selectors(ctx context.Context) ([]Selector, error) {
+	var response proxiesResponse
+	if err := c.doJSON(ctx, http.MethodGet, "/proxies", nil, &response); err != nil {
+		return nil, err
+	}
+	selectors := make([]Selector, 0)
+	for name, proxy := range response.Proxies {
+		if !strings.EqualFold(strings.TrimSpace(proxy.Type), "Selector") {
+			continue
+		}
+		if strings.TrimSpace(proxy.Name) == "" {
+			proxy.Name = name
+		}
+		selectors = append(selectors, proxy)
+	}
+	sort.Slice(selectors, func(i, j int) bool {
+		return strings.ToLower(selectors[i].Name) < strings.ToLower(selectors[j].Name)
+	})
+	return selectors, nil
 }
 
 func (c *Client) Select(ctx context.Context, selector, node string) error {
@@ -111,6 +137,9 @@ func (c *Client) doJSON(ctx context.Context, method, path string, input, output 
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
+		if errors.Is(err, io.EOF) {
+			return errors.New("Mihomo controller closed the connection; check the IP, HTTP/HTTPS scheme, and Secret")
+		}
 		return fmt.Errorf("call Mihomo controller: %w", err)
 	}
 	defer resp.Body.Close()

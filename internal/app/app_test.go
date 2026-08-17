@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/zesuy/cpa-route-allocator/internal/state"
@@ -276,6 +277,77 @@ func TestAliasAndMoveCredential(t *testing.T) {
 	}
 	if loaded.Credentials[0].Alias != "主号" || loaded.Credentials[0].Group != "backup" {
 		t.Fatalf("alias or group was not updated: %#v", loaded.Credentials[0])
+	}
+}
+
+func TestManagementCRUDAndAdoptLocalCredential(t *testing.T) {
+	store := state.New(filepath.Join(t.TempDir(), "state.json"))
+	host := newRecordingHost()
+	host.saved["local.json"] = map[string]any{
+		"type": "codex", "access_token": "local-token", "email": "local@example.com", "account_id": "account-local",
+	}
+	application := New(store, host)
+
+	group := map[string]any{"name": "local", "priority": 50, "websockets": true, "listener_pool": "default", "shortage_policy": "default_route"}
+	response := callManagement(t, application, http.MethodPost, managementPrefix+"/groups", group)
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("create group status = %d body=%s", response.StatusCode, response.Body)
+	}
+	response = callManagement(t, application, http.MethodGet, managementPrefix+"/groups", nil)
+	if response.StatusCode != http.StatusOK || !containsJSONKey(response.Body, "groups") {
+		t.Fatalf("list groups status = %d body=%s", response.StatusCode, response.Body)
+	}
+	response = callManagement(t, application, http.MethodPost, managementPrefix+"/route-slots", map[string]any{
+		"id": "local-slot", "listener_url": "socks5://127.0.0.1:21002", "selector": "cpa-local", "pool": "default",
+	})
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("create route slot status = %d body=%s", response.StatusCode, response.Body)
+	}
+	response = callManagement(t, application, http.MethodPut, managementPrefix+"/route-slots", map[string]any{
+		"id": "local-slot", "listener_url": "socks5://127.0.0.1:21003", "selector": "cpa-local-2", "pool": "default",
+	})
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("update route slot status = %d body=%s", response.StatusCode, response.Body)
+	}
+
+	response = callManagement(t, application, http.MethodGet, managementPrefix+"/credentials/local", nil)
+	if response.StatusCode != http.StatusOK || !strings.Contains(string(response.Body), "local@example.com") {
+		t.Fatalf("list local credentials status = %d body=%s", response.StatusCode, response.Body)
+	}
+	var local struct {
+		Credentials []localCredentialItem `json:"credentials"`
+	}
+	if err := json.Unmarshal(response.Body, &local); err != nil || len(local.Credentials) != 1 {
+		t.Fatalf("unexpected local credentials: err=%v body=%s", err, response.Body)
+	}
+	response = callManagement(t, application, http.MethodPost, managementPrefix+"/credentials/adopt", map[string]any{
+		"auth_index": local.Credentials[0].AuthIndex, "group": "local",
+	})
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("adopt credential status = %d body=%s", response.StatusCode, response.Body)
+	}
+	response = callManagement(t, application, http.MethodDelete, managementPrefix+"/groups", map[string]any{"name": "local"})
+	if response.StatusCode != http.StatusConflict {
+		t.Fatalf("delete non-empty group status = %d body=%s", response.StatusCode, response.Body)
+	}
+	loaded, err := store.Load()
+	if err != nil || len(loaded.Credentials) != 1 {
+		t.Fatalf("adopt did not create managed credential: err=%v state=%#v", err, loaded)
+	}
+	response = callManagement(t, application, http.MethodDelete, managementPrefix+"/credentials/managed", map[string]any{"identity": loaded.Credentials[0].Identity})
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("unmanage credential status = %d body=%s", response.StatusCode, response.Body)
+	}
+	if host.saved["local.json"]["access_token"] != "local-token" {
+		t.Fatalf("unmanage removed the CPA Auth credential: %#v", host.saved["local.json"])
+	}
+	response = callManagement(t, application, http.MethodDelete, managementPrefix+"/groups", map[string]any{"name": "local"})
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("delete empty group status = %d body=%s", response.StatusCode, response.Body)
+	}
+	response = callManagement(t, application, http.MethodDelete, managementPrefix+"/route-slots", map[string]any{"id": "local-slot"})
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("delete route slot status = %d body=%s", response.StatusCode, response.Body)
 	}
 }
 

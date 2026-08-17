@@ -147,9 +147,14 @@ type pendingSave struct {
 }
 
 type hostAuthFileEntry struct {
-	AuthIndex string `json:"auth_index"`
-	Name      string `json:"name"`
-	Email     string `json:"email,omitempty"`
+	AuthIndex   string `json:"auth_index"`
+	Name        string `json:"name"`
+	Email       string `json:"email,omitempty"`
+	Provider    string `json:"provider,omitempty"`
+	Type        string `json:"type,omitempty"`
+	Label       string `json:"label,omitempty"`
+	Disabled    bool   `json:"disabled,omitempty"`
+	RuntimeOnly bool   `json:"runtime_only,omitempty"`
 }
 
 type hostAuthListResponse struct {
@@ -157,7 +162,9 @@ type hostAuthListResponse struct {
 }
 
 type hostAuthGetResponse struct {
-	JSON json.RawMessage `json:"json"`
+	AuthIndex string          `json:"auth_index,omitempty"`
+	Name      string          `json:"name,omitempty"`
+	JSON      json.RawMessage `json:"json"`
 }
 
 type selectNodeInput struct {
@@ -173,6 +180,19 @@ type aliasInput struct {
 type moveCredentialInput struct {
 	Identity string `json:"identity"`
 	Group    string `json:"group"`
+}
+
+type adoptCredentialInput struct {
+	AuthIndex string `json:"auth_index"`
+	Group     string `json:"group"`
+}
+
+type unmanageCredentialInput struct {
+	Identity string `json:"identity"`
+}
+
+type routeSlotDeleteInput struct {
+	ID string `json:"id"`
 }
 
 type syncedRouteSlot struct {
@@ -224,13 +244,23 @@ func managementRoutes() managementRegistration {
 		Routes: []managementRoute{
 			{Method: http.MethodGet, Path: "/plugins/" + PluginName + "/state", Description: "Read allocator state without secrets."},
 			{Method: http.MethodPut, Path: "/plugins/" + PluginName + "/settings", Description: "Update Mihomo controller settings."},
+			{Method: http.MethodGet, Path: "/plugins/" + PluginName + "/groups", Description: "List credential groups."},
+			{Method: http.MethodPost, Path: "/plugins/" + PluginName + "/groups", Description: "Create a credential group."},
 			{Method: http.MethodPut, Path: "/plugins/" + PluginName + "/groups", Description: "Create or update a credential group."},
+			{Method: http.MethodDelete, Path: "/plugins/" + PluginName + "/groups", Description: "Delete an unused credential group."},
+			{Method: http.MethodGet, Path: "/plugins/" + PluginName + "/route-slots", Description: "List Listener and Selector mappings."},
+			{Method: http.MethodPost, Path: "/plugins/" + PluginName + "/route-slots", Description: "Create a Listener and Selector mapping."},
 			{Method: http.MethodPut, Path: "/plugins/" + PluginName + "/route-slots", Description: "Create or update a Listener and Selector mapping."},
+			{Method: http.MethodDelete, Path: "/plugins/" + PluginName + "/route-slots", Description: "Delete an unused Listener and Selector mapping."},
 			{Method: http.MethodGet, Path: "/plugins/" + PluginName + "/mihomo/status", Description: "Check the configured Mihomo controller."},
+			{Method: http.MethodGet, Path: "/plugins/" + PluginName + "/mihomo/selectors", Description: "List Selector groups available from Mihomo."},
 			{Method: http.MethodPost, Path: "/plugins/" + PluginName + "/route-slots/sync", Description: "Refresh Selector nodes and current selections from Mihomo."},
 			{Method: http.MethodPost, Path: "/plugins/" + PluginName + "/route-slots/select", Description: "Manually switch a route slot Selector node."},
 			{Method: http.MethodPut, Path: "/plugins/" + PluginName + "/credentials/alias", Description: "Override the display alias for a credential."},
 			{Method: http.MethodPost, Path: "/plugins/" + PluginName + "/credentials/move", Description: "Move an existing credential to another group."},
+			{Method: http.MethodGet, Path: "/plugins/" + PluginName + "/credentials/local", Description: "List existing CPA Auth files that can be managed."},
+			{Method: http.MethodPost, Path: "/plugins/" + PluginName + "/credentials/adopt", Description: "Add an existing CPA Auth file to allocator management."},
+			{Method: http.MethodDelete, Path: "/plugins/" + PluginName + "/credentials/managed", Description: "Stop managing a credential without deleting its CPA Auth file."},
 			{Method: http.MethodPost, Path: "/plugins/" + PluginName + "/import/preview", Description: "Preview credential conversion without writing CPA Auth files."},
 			{Method: http.MethodPost, Path: "/plugins/" + PluginName + "/upload", Description: "Upload credentials from the management page."},
 			{Method: http.MethodPost, Path: "/plugins/" + PluginName + "/import", Description: "Import credentials through the external Management API."},
@@ -258,12 +288,26 @@ func (a *App) handleManagement(raw []byte) (json.RawMessage, error) {
 		response, err = a.getState()
 	case req.Method == http.MethodPut && path == managementPrefix+"/settings":
 		response, err = a.putSettings(req.Body)
+	case req.Method == http.MethodGet && path == managementPrefix+"/groups":
+		response, err = a.getGroups()
+	case req.Method == http.MethodPost && path == managementPrefix+"/groups":
+		response, err = a.createGroup(req.Body)
 	case req.Method == http.MethodPut && path == managementPrefix+"/groups":
 		response, err = a.putGroup(req.Body)
+	case req.Method == http.MethodDelete && path == managementPrefix+"/groups":
+		response, err = a.deleteGroup(req.Body)
+	case req.Method == http.MethodGet && path == managementPrefix+"/route-slots":
+		response, err = a.getRouteSlots()
+	case req.Method == http.MethodPost && path == managementPrefix+"/route-slots":
+		response, err = a.createRouteSlot(req.Body)
 	case req.Method == http.MethodPut && path == managementPrefix+"/route-slots":
 		response, err = a.putRouteSlot(req.Body)
+	case req.Method == http.MethodDelete && path == managementPrefix+"/route-slots":
+		response, err = a.deleteRouteSlot(req.Body)
 	case req.Method == http.MethodGet && path == managementPrefix+"/mihomo/status":
 		response, err = a.mihomoStatus()
+	case req.Method == http.MethodGet && path == managementPrefix+"/mihomo/selectors":
+		response, err = a.mihomoSelectors()
 	case req.Method == http.MethodPost && path == managementPrefix+"/route-slots/sync":
 		response, err = a.syncRouteSlots()
 	case req.Method == http.MethodPost && path == managementPrefix+"/route-slots/select":
@@ -272,6 +316,12 @@ func (a *App) handleManagement(raw []byte) (json.RawMessage, error) {
 		response, err = a.setCredentialAlias(req.Body)
 	case req.Method == http.MethodPost && path == managementPrefix+"/credentials/move":
 		response, err = a.moveCredential(req.Body)
+	case req.Method == http.MethodGet && path == managementPrefix+"/credentials/local":
+		response, err = a.listLocalCredentials()
+	case req.Method == http.MethodPost && path == managementPrefix+"/credentials/adopt":
+		response, err = a.adoptLocalCredential(req.Body)
+	case req.Method == http.MethodDelete && path == managementPrefix+"/credentials/managed":
+		response, err = a.unmanageCredential(req.Body)
 	case req.Method == http.MethodPost && path == managementPrefix+"/import/preview":
 		response, err = a.previewImport(req.Body)
 	case req.Method == http.MethodPost && path == managementPrefix+"/upload":
@@ -318,56 +368,10 @@ func (a *App) putSettings(body []byte) (managementResponse, error) {
 	return jsonResponse(http.StatusOK, updated.Public()), nil
 }
 
-func (a *App) putGroup(body []byte) (managementResponse, error) {
-	var input model.Group
-	if err := decodeBody(body, &input); err != nil {
-		return managementResponse{}, err
-	}
-	input.Name = strings.TrimSpace(input.Name)
-	input.ListenerPool = strings.TrimSpace(input.ListenerPool)
-	if input.Name == "" {
-		return managementResponse{}, clientError("group name is required")
-	}
-	if input.ShortagePolicy == "" {
-		input.ShortagePolicy = model.ShortageReject
-	}
-	if !input.ShortagePolicy.Valid() {
-		return managementResponse{}, clientError("invalid shortage_policy")
-	}
-	updated, err := a.store.Update(func(value *model.State) error {
-		for index := range value.Groups {
-			if strings.EqualFold(value.Groups[index].Name, input.Name) {
-				value.Groups[index] = input
-				return nil
-			}
-		}
-		value.Groups = append(value.Groups, input)
-		sort.Slice(value.Groups, func(i, j int) bool {
-			return strings.ToLower(value.Groups[i].Name) < strings.ToLower(value.Groups[j].Name)
-		})
-		return nil
-	})
+func (a *App) putRouteSlot(body []byte) (managementResponse, error) {
+	input, err := decodeRouteSlot(body)
 	if err != nil {
 		return managementResponse{}, err
-	}
-	return jsonResponse(http.StatusOK, updated.Public()), nil
-}
-
-func (a *App) putRouteSlot(body []byte) (managementResponse, error) {
-	var input model.RouteSlot
-	if err := decodeBody(body, &input); err != nil {
-		return managementResponse{}, err
-	}
-	input.ID = strings.TrimSpace(input.ID)
-	input.Name = strings.TrimSpace(input.Name)
-	input.ListenerURL = strings.TrimSpace(input.ListenerURL)
-	input.Selector = strings.TrimSpace(input.Selector)
-	input.Pool = strings.TrimSpace(input.Pool)
-	if input.ID == "" || input.ListenerURL == "" || input.Selector == "" || input.Pool == "" {
-		return managementResponse{}, clientError("id, listener_url, selector and pool are required")
-	}
-	if input.Name == "" {
-		input.Name = input.ID
 	}
 	updated, err := a.store.Update(func(value *model.State) error {
 		for index := range value.RouteSlots {
@@ -388,6 +392,87 @@ func (a *App) putRouteSlot(body []byte) (managementResponse, error) {
 	return jsonResponse(http.StatusOK, updated.Public()), nil
 }
 
+func (a *App) getRouteSlots() (managementResponse, error) {
+	value, err := a.store.Load()
+	if err != nil {
+		return managementResponse{}, err
+	}
+	slots := append([]model.RouteSlot(nil), value.RouteSlots...)
+	if slots == nil {
+		slots = []model.RouteSlot{}
+	}
+	return jsonResponse(http.StatusOK, map[string]any{"route_slots": slots}), nil
+}
+
+func (a *App) createRouteSlot(body []byte) (managementResponse, error) {
+	input, err := decodeRouteSlot(body)
+	if err != nil {
+		return managementResponse{}, err
+	}
+	updated, err := a.store.Update(func(value *model.State) error {
+		for _, slot := range value.RouteSlots {
+			if slot.ID == input.ID {
+				return conflictError("route slot already exists")
+			}
+		}
+		value.RouteSlots = append(value.RouteSlots, input)
+		sort.Slice(value.RouteSlots, func(i, j int) bool { return value.RouteSlots[i].ID < value.RouteSlots[j].ID })
+		return nil
+	})
+	if err != nil {
+		return managementResponse{}, err
+	}
+	return jsonResponse(http.StatusCreated, updated.Public()), nil
+}
+
+func (a *App) deleteRouteSlot(body []byte) (managementResponse, error) {
+	var input routeSlotDeleteInput
+	if err := decodeBody(body, &input); err != nil {
+		return managementResponse{}, err
+	}
+	input.ID = strings.TrimSpace(input.ID)
+	if input.ID == "" {
+		return managementResponse{}, clientError("id is required")
+	}
+	updated, err := a.store.Update(func(value *model.State) error {
+		for _, credential := range value.Credentials {
+			if credential.RouteSlotID == input.ID {
+				return conflictError("route slot is still assigned to managed credentials")
+			}
+		}
+		for index := range value.RouteSlots {
+			if value.RouteSlots[index].ID == input.ID {
+				value.RouteSlots = append(value.RouteSlots[:index], value.RouteSlots[index+1:]...)
+				return nil
+			}
+		}
+		return clientError("route slot does not exist")
+	})
+	if err != nil {
+		return managementResponse{}, err
+	}
+	return jsonResponse(http.StatusOK, updated.Public()), nil
+}
+
+func decodeRouteSlot(body []byte) (model.RouteSlot, error) {
+	var input model.RouteSlot
+	if err := decodeBody(body, &input); err != nil {
+		return model.RouteSlot{}, err
+	}
+	input.ID = strings.TrimSpace(input.ID)
+	input.Name = strings.TrimSpace(input.Name)
+	input.ListenerURL = strings.TrimSpace(input.ListenerURL)
+	input.Selector = strings.TrimSpace(input.Selector)
+	input.Pool = strings.TrimSpace(input.Pool)
+	if input.ID == "" || input.ListenerURL == "" || input.Selector == "" || input.Pool == "" {
+		return model.RouteSlot{}, clientError("id, listener_url, selector and pool are required")
+	}
+	if input.Name == "" {
+		input.Name = input.ID
+	}
+	return input, nil
+}
+
 func (a *App) mihomoStatus() (managementResponse, error) {
 	value, client, err := a.mihomoClient()
 	if err != nil {
@@ -405,6 +490,20 @@ func (a *App) mihomoStatus() (managementResponse, error) {
 		"meta":           version.Meta,
 		"premium":        version.Premium,
 	}), nil
+}
+
+func (a *App) mihomoSelectors() (managementResponse, error) {
+	_, client, err := a.mihomoClient()
+	if err != nil {
+		return managementResponse{}, clientError(err.Error())
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	selectors, err := client.Selectors(ctx)
+	if err != nil {
+		return managementResponse{}, upstreamError(err.Error())
+	}
+	return jsonResponse(http.StatusOK, map[string]any{"selectors": selectors}), nil
 }
 
 func (a *App) syncRouteSlots() (managementResponse, error) {
