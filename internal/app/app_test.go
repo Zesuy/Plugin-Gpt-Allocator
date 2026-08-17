@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/zesuy/cpa-route-allocator/internal/model"
 	"github.com/zesuy/cpa-route-allocator/internal/state"
 )
 
@@ -18,6 +19,20 @@ func (fakeHost) Call(string, any) (json.RawMessage, error) { return json.RawMess
 
 type recordingHost struct {
 	saved map[string]map[string]any
+}
+
+type quotaHost struct{}
+
+func (quotaHost) Call(method string, payload any) (json.RawMessage, error) {
+	switch method {
+	case "host.auth.list":
+		return json.RawMessage(`{"files":[{"name":"alice@example.com.json","auth_index":"auth-1"}]}`), nil
+	case "host.http.do":
+		body, _ := json.Marshal(map[string]any{"status_code": http.StatusOK, "body": `{"rate_limit":{"primary_window":{"used_percent":5}}}`})
+		return json.Marshal(map[string]any{"StatusCode": http.StatusOK, "Body": body})
+	default:
+		return json.RawMessage(`{}`), nil
+	}
 }
 
 func newRecordingHost() *recordingHost { return &recordingHost{saved: make(map[string]map[string]any)} }
@@ -113,6 +128,45 @@ func TestUsageHandleSeparatesSSEAndWebsocketStats(t *testing.T) {
 	}
 	if got.SSE.Requests != 1 || got.SSE.OutputTokens != 120 || got.Websocket.Requests != 1 || got.Websocket.OutputTokens != 80 {
 		t.Fatalf("unexpected transport stats: %#v", got)
+	}
+}
+
+func TestParseCodexQuotaKeepsIndependentWindows(t *testing.T) {
+	snapshot := &model.QuotaSnapshot{}
+	err := parseCodexQuota([]byte(`{"rate_limit":{"primary_window":{"used_percent":12,"reset_at":1700000000},"secondary_window":{"used_percent":84,"reset_after_seconds":3600,"limit_reached":true}}}`), snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshot.Rows) != 2 || snapshot.Rows[0].Window != "primary" || snapshot.Rows[1].Window != "secondary" {
+		t.Fatalf("unexpected quota rows: %#v", snapshot.Rows)
+	}
+	if snapshot.Rows[0].RemainingPercent == nil || *snapshot.Rows[0].RemainingPercent != 88 {
+		t.Fatalf("unexpected primary remaining percentage: %#v", snapshot.Rows[0])
+	}
+	if snapshot.Rows[1].ResetAfterSeconds == nil || *snapshot.Rows[1].ResetAfterSeconds != 3600 || snapshot.Rows[1].LimitReached == nil || !*snapshot.Rows[1].LimitReached {
+		t.Fatalf("unexpected secondary window: %#v", snapshot.Rows[1])
+	}
+}
+
+func TestCredentialQuotaUsesCPAAPICall(t *testing.T) {
+	store := state.New(filepath.Join(t.TempDir(), "state.json"))
+	if _, err := store.Update(func(value *model.State) error {
+		value.Credentials = []model.Credential{{Identity: "identity-1", AuthFile: "alice@example.com.json", Provider: "codex"}}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	application := New(store, quotaHost{})
+	response := callManagementWithHeaders(t, application, http.MethodPost, managementPrefix+"/credentials/quota", map[string]any{"identity": "identity-1"}, http.Header{"Authorization": []string{"Bearer key"}})
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("quota status = %d body=%s", response.StatusCode, response.Body)
+	}
+	var got quotaCheckResult
+	if err := json.Unmarshal(response.Body, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Quota == nil || len(got.Quota.Rows) != 1 || got.Quota.Rows[0].UsedPercent == nil || *got.Quota.Rows[0].UsedPercent != 5 {
+		t.Fatalf("unexpected quota result: %#v", got)
 	}
 }
 

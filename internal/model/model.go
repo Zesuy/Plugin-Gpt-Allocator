@@ -52,19 +52,41 @@ type RouteSlot struct {
 }
 
 type Credential struct {
-	Identity    string    `json:"identity"`
-	AuthFile    string    `json:"auth_file"`
-	Disabled    bool      `json:"disabled"`
-	Email       string    `json:"email"`
-	Alias       string    `json:"alias,omitempty"`
-	Provider    string    `json:"provider"`
-	AccountID   string    `json:"account_id,omitempty"`
-	WorkspaceID string    `json:"workspace_id,omitempty"`
-	Group       string    `json:"group"`
-	RouteSlotID string    `json:"route_slot_id,omitempty"`
-	RouteStatus string    `json:"route_status"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	Identity    string         `json:"identity"`
+	AuthFile    string         `json:"auth_file"`
+	Disabled    bool           `json:"disabled"`
+	Email       string         `json:"email"`
+	Alias       string         `json:"alias,omitempty"`
+	Provider    string         `json:"provider"`
+	AccountID   string         `json:"account_id,omitempty"`
+	WorkspaceID string         `json:"workspace_id,omitempty"`
+	Group       string         `json:"group"`
+	RouteSlotID string         `json:"route_slot_id,omitempty"`
+	RouteStatus string         `json:"route_status"`
+	CreatedAt   time.Time      `json:"created_at"`
+	UpdatedAt   time.Time      `json:"updated_at"`
+	Quota       *QuotaSnapshot `json:"quota,omitempty"`
+}
+
+// QuotaSnapshot is deliberately provider-neutral at the storage boundary. A
+// provider can expose more than one independent window, so rows are kept
+// separate instead of being collapsed into a single remaining number.
+type QuotaSnapshot struct {
+	Provider  string     `json:"provider"`
+	CheckedAt time.Time  `json:"checked_at"`
+	ExpiresAt time.Time  `json:"expires_at"`
+	Rows      []QuotaRow `json:"rows,omitempty"`
+	Error     string     `json:"error,omitempty"`
+}
+
+type QuotaRow struct {
+	Window            string   `json:"window"`
+	UsedPercent       *float64 `json:"used_percent,omitempty"`
+	RemainingPercent  *float64 `json:"remaining_percent,omitempty"`
+	ResetAt           *int64   `json:"reset_at,omitempty"`
+	ResetAfterSeconds *int64   `json:"reset_after_seconds,omitempty"`
+	Allowed           *bool    `json:"allowed,omitempty"`
+	LimitReached      *bool    `json:"limit_reached,omitempty"`
 }
 
 func (c Credential) DisplayName() string {

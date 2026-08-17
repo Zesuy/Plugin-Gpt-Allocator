@@ -19,6 +19,7 @@ The plugin runs inside CLIProxyAPI. It reuses the existing CPA port and Manageme
 - existing CPA Auth discovery and adoption, plus safe unmanage (the Auth file is retained)
 - per-credential enable/disable switch delegated to CPA's auth-files status API
 - credential overview grouped by allocator group
+- self-use Codex quota check per credential, with independent primary/secondary windows and cached errors
 - short toast feedback in the UI; credential and Listener edits use accessible modal dialogs
 - CPA `usage.handle` summaries split into SSE, WebSocket, other-stream, and non-stream buckets
 - Mihomo `/proxies` alive/history data exposed during route sync for node health display
@@ -100,6 +101,7 @@ POST /v0/management/plugins/cpa-route-allocator/import
 PUT  /v0/management/plugins/cpa-route-allocator/credentials/alias
 POST /v0/management/plugins/cpa-route-allocator/credentials/move
 PUT  /v0/management/plugins/cpa-route-allocator/credentials/status
+POST /v0/management/plugins/cpa-route-allocator/credentials/quota
 GET  /v0/management/plugins/cpa-route-allocator/credentials/local
 POST /v0/management/plugins/cpa-route-allocator/credentials/adopt
 DELETE /v0/management/plugins/cpa-route-allocator/credentials/managed
