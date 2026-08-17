@@ -81,13 +81,14 @@ type QuotaSnapshot struct {
 }
 
 type QuotaRow struct {
-	Window            string   `json:"window"`
-	UsedPercent       *float64 `json:"used_percent,omitempty"`
-	RemainingPercent  *float64 `json:"remaining_percent,omitempty"`
-	ResetAt           *int64   `json:"reset_at,omitempty"`
-	ResetAfterSeconds *int64   `json:"reset_after_seconds,omitempty"`
-	Allowed           *bool    `json:"allowed,omitempty"`
-	LimitReached      *bool    `json:"limit_reached,omitempty"`
+	Window             string   `json:"window"`
+	UsedPercent        *float64 `json:"used_percent,omitempty"`
+	RemainingPercent   *float64 `json:"remaining_percent,omitempty"`
+	LimitWindowSeconds *int64   `json:"limit_window_seconds,omitempty"`
+	ResetAt            *int64   `json:"reset_at,omitempty"`
+	ResetAfterSeconds  *int64   `json:"reset_after_seconds,omitempty"`
+	Allowed            *bool    `json:"allowed,omitempty"`
+	LimitReached       *bool    `json:"limit_reached,omitempty"`
 }
 
 func (c Credential) DisplayName() string {

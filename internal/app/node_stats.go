@@ -269,10 +269,14 @@ func (h *routeHistory) nodeAt(slotID string, at time.Time, fallback string) stri
 }
 
 func (a *App) resolveUsageRoute(value model.State, record usageRecord) (string, string, bool) {
+	authFile := strings.TrimSpace(record.AuthIndex)
+	if resolved := a.authFileForIndex(authFile); resolved != "" {
+		authFile = resolved
+	}
 	var credential *model.Credential
 	for index := range value.Credentials {
 		item := &value.Credentials[index]
-		if (record.AuthIndex != "" && strings.EqualFold(item.AuthFile, record.AuthIndex)) || (record.AuthID != "" && item.Identity == record.AuthID) {
+		if (authFile != "" && strings.EqualFold(item.AuthFile, authFile)) || (record.AuthID != "" && item.Identity == record.AuthID) {
 			credential = item
 			break
 		}
@@ -288,4 +292,35 @@ func (a *App) resolveUsageRoute(value model.State, record usageRecord) (string, 
 		return slot.ID, node, node != ""
 	}
 	return "", "", false
+}
+
+func (a *App) authFileForIndex(authIndex string) string {
+	authIndex = strings.TrimSpace(authIndex)
+	if authIndex == "" {
+		return ""
+	}
+	now := time.Now().UTC()
+	a.authIndexMu.RLock()
+	filename := a.authFilesByIndex[strings.ToLower(authIndex)]
+	fresh := !a.authIndexCacheAt.IsZero() && now.Sub(a.authIndexCacheAt) < time.Minute
+	a.authIndexMu.RUnlock()
+	if filename != "" || fresh {
+		return filename
+	}
+	files, err := a.listHostAuthFiles()
+	if err != nil {
+		return ""
+	}
+	byIndex := make(map[string]string, len(files))
+	for _, file := range files {
+		if index := strings.ToLower(strings.TrimSpace(file.AuthIndex)); index != "" {
+			byIndex[index] = strings.TrimSpace(file.Name)
+		}
+	}
+	a.authIndexMu.Lock()
+	a.authFilesByIndex = byIndex
+	a.authIndexCacheAt = now
+	filename = byIndex[strings.ToLower(authIndex)]
+	a.authIndexMu.Unlock()
+	return filename
 }

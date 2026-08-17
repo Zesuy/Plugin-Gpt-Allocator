@@ -33,11 +33,14 @@ type Host interface {
 }
 
 type App struct {
-	store        *state.Store
-	host         Host
-	usage        usageStats
-	nodeStats    nodeStatsStore
-	routeHistory routeHistory
+	store            *state.Store
+	host             Host
+	usage            usageStats
+	nodeStats        nodeStatsStore
+	routeHistory     routeHistory
+	authIndexMu      sync.RWMutex
+	authFilesByIndex map[string]string
+	authIndexCacheAt time.Time
 }
 
 type registration struct {

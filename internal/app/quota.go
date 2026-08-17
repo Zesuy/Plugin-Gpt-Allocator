@@ -70,14 +70,20 @@ func (a *App) checkCredentialQuota(body []byte, headers http.Header) (management
 				}
 			}
 		}
+		requestHeaders := map[string]string{
+			"Authorization": "Bearer $TOKEN$",
+			"Accept":        "application/json",
+			"Content-Type":  "application/json",
+			"User-Agent":    "codex_cli_rs/0.76.0 (Debian 13.0.0; x86_64) WindowsTerminal",
+		}
+		if strings.TrimSpace(credential.AccountID) != "" {
+			requestHeaders["Chatgpt-Account-Id"] = credential.AccountID
+		}
 		payload, marshalErr := json.Marshal(map[string]any{
 			"auth_index": authIndex,
 			"method":     http.MethodGet,
 			"url":        codexQuotaURL,
-			"header": map[string]string{
-				"Authorization": "Bearer $TOKEN$",
-				"Accept":        "application/json",
-			},
+			"header":     requestHeaders,
 		})
 		if marshalErr != nil {
 			return managementResponse{}, marshalErr
@@ -102,7 +108,7 @@ func (a *App) checkCredentialQuota(body []byte, headers http.Header) (management
 				if apiErr := json.Unmarshal(response.Body, &apiResponse); apiErr != nil {
 					snapshot.Error = "读取 CPA 额度响应失败"
 				} else if apiResponse.StatusCode < 200 || apiResponse.StatusCode >= 300 {
-					snapshot.Error = fmt.Sprintf("Codex 额度接口返回 HTTP %d", apiResponse.StatusCode)
+					snapshot.Error = codexQuotaHTTPError(apiResponse.StatusCode, []byte(apiResponse.Body))
 				} else if parseErr := parseCodexQuota([]byte(apiResponse.Body), snapshot); parseErr != nil {
 					snapshot.Error = "解析 Codex 额度响应失败"
 				}
@@ -143,12 +149,41 @@ func parseCodexQuota(body []byte, snapshot *model.QuotaSnapshot) error {
 	if rateLimit == nil {
 		return fmt.Errorf("rate_limit is missing")
 	}
+	rowsBefore := len(snapshot.Rows)
+	appendCodexQuotaRows(snapshot, "", rateLimit)
+	if codeReview, _ := document["code_review_rate_limit"].(map[string]any); codeReview != nil {
+		appendCodexQuotaRows(snapshot, "code review", codeReview)
+	}
+	if additional, _ := document["additional_rate_limits"].([]any); additional != nil {
+		for _, raw := range additional {
+			item, _ := raw.(map[string]any)
+			if item == nil {
+				continue
+			}
+			name := firstString(item["limit_name"], item["limitName"], item["metered_feature"], item["meteredFeature"])
+			limits, _ := item["rate_limit"].(map[string]any)
+			if name != "" && limits != nil {
+				appendCodexQuotaRows(snapshot, name, limits)
+			}
+		}
+	}
+	if len(snapshot.Rows) == rowsBefore {
+		return fmt.Errorf("no quota windows")
+	}
+	return nil
+}
+
+func appendCodexQuotaRows(snapshot *model.QuotaSnapshot, prefix string, rateLimit map[string]any) {
 	for _, name := range []string{"primary_window", "secondary_window"} {
 		window, _ := rateLimit[name].(map[string]any)
 		if window == nil {
 			continue
 		}
-		row := model.QuotaRow{Window: strings.TrimSuffix(strings.TrimSuffix(name, "_window"), "_")}
+		windowName := strings.TrimSuffix(strings.TrimSuffix(name, "_window"), "_")
+		if prefix != "" {
+			windowName = prefix + " · " + windowName
+		}
+		row := model.QuotaRow{Window: windowName}
 		if used, ok := number(window["used_percent"]); ok {
 			row.UsedPercent = &used
 			remaining := 100 - used
@@ -159,6 +194,9 @@ func parseCodexQuota(body []byte, snapshot *model.QuotaSnapshot) error {
 		}
 		if reset, ok := integer(window["reset_at"]); ok {
 			row.ResetAt = &reset
+		}
+		if seconds, ok := integer(window["limit_window_seconds"]); ok {
+			row.LimitWindowSeconds = &seconds
 		}
 		if seconds, ok := integer(window["reset_after_seconds"]); ok {
 			row.ResetAfterSeconds = &seconds
@@ -171,10 +209,36 @@ func parseCodexQuota(body []byte, snapshot *model.QuotaSnapshot) error {
 		}
 		snapshot.Rows = append(snapshot.Rows, row)
 	}
-	if len(snapshot.Rows) == 0 {
-		return fmt.Errorf("no quota windows")
+}
+
+func firstString(values ...any) string {
+	for _, value := range values {
+		if text, ok := value.(string); ok && strings.TrimSpace(text) != "" {
+			return strings.TrimSpace(text)
+		}
 	}
-	return nil
+	return ""
+}
+
+func codexQuotaHTTPError(status int, body []byte) string {
+	var document struct {
+		Error struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	_ = json.Unmarshal(body, &document)
+	switch strings.ToLower(strings.TrimSpace(document.Error.Code)) {
+	case "token_invalidated", "invalid_api_key", "invalid_token":
+		return "凭据登录已失效，请重新登录"
+	}
+	if status == http.StatusUnauthorized {
+		return "凭据鉴权失败，请重新登录"
+	}
+	if status == http.StatusTooManyRequests {
+		return "额度服务请求过于频繁，请稍后重试"
+	}
+	return fmt.Sprintf("Codex 额度接口返回 HTTP %d", status)
 }
 
 func number(value any) (float64, bool) {

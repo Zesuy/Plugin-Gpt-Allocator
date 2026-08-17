@@ -21,13 +21,16 @@ type recordingHost struct {
 	saved map[string]map[string]any
 }
 
-type quotaHost struct{}
+type quotaHost struct {
+	apiCallPayload map[string]any
+}
 
-func (quotaHost) Call(method string, payload any) (json.RawMessage, error) {
+func (h *quotaHost) Call(method string, payload any) (json.RawMessage, error) {
 	switch method {
 	case "host.auth.list":
 		return json.RawMessage(`{"files":[{"name":"alice@example.com.json","auth_index":"auth-1"}]}`), nil
 	case "host.http.do":
+		h.apiCallPayload = payload.(map[string]any)
 		body, _ := json.Marshal(map[string]any{"status_code": http.StatusOK, "body": `{"rate_limit":{"primary_window":{"used_percent":5}}}`})
 		return json.Marshal(map[string]any{"StatusCode": http.StatusOK, "Body": body})
 	default:
@@ -133,15 +136,18 @@ func TestUsageHandleSeparatesSSEAndWebsocketStats(t *testing.T) {
 
 func TestParseCodexQuotaKeepsIndependentWindows(t *testing.T) {
 	snapshot := &model.QuotaSnapshot{}
-	err := parseCodexQuota([]byte(`{"rate_limit":{"primary_window":{"used_percent":12,"reset_at":1700000000},"secondary_window":{"used_percent":84,"reset_after_seconds":3600,"limit_reached":true}}}`), snapshot)
+	err := parseCodexQuota([]byte(`{"rate_limit":{"primary_window":{"used_percent":12,"limit_window_seconds":18000,"reset_at":1700000000},"secondary_window":{"used_percent":84,"reset_after_seconds":3600,"limit_reached":true}},"additional_rate_limits":[{"limit_name":"Codex Spark","rate_limit":{"primary_window":{"used_percent":3}}}]}`), snapshot)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(snapshot.Rows) != 2 || snapshot.Rows[0].Window != "primary" || snapshot.Rows[1].Window != "secondary" {
+	if len(snapshot.Rows) != 3 || snapshot.Rows[0].Window != "primary" || snapshot.Rows[1].Window != "secondary" || snapshot.Rows[2].Window != "Codex Spark · primary" {
 		t.Fatalf("unexpected quota rows: %#v", snapshot.Rows)
 	}
 	if snapshot.Rows[0].RemainingPercent == nil || *snapshot.Rows[0].RemainingPercent != 88 {
 		t.Fatalf("unexpected primary remaining percentage: %#v", snapshot.Rows[0])
+	}
+	if snapshot.Rows[0].LimitWindowSeconds == nil || *snapshot.Rows[0].LimitWindowSeconds != 18000 {
+		t.Fatalf("unexpected primary window size: %#v", snapshot.Rows[0])
 	}
 	if snapshot.Rows[1].ResetAfterSeconds == nil || *snapshot.Rows[1].ResetAfterSeconds != 3600 || snapshot.Rows[1].LimitReached == nil || !*snapshot.Rows[1].LimitReached {
 		t.Fatalf("unexpected secondary window: %#v", snapshot.Rows[1])
@@ -151,12 +157,13 @@ func TestParseCodexQuotaKeepsIndependentWindows(t *testing.T) {
 func TestCredentialQuotaUsesCPAAPICall(t *testing.T) {
 	store := state.New(filepath.Join(t.TempDir(), "state.json"))
 	if _, err := store.Update(func(value *model.State) error {
-		value.Credentials = []model.Credential{{Identity: "identity-1", AuthFile: "alice@example.com.json", Provider: "codex"}}
+		value.Credentials = []model.Credential{{Identity: "identity-1", AuthFile: "alice@example.com.json", Provider: "codex", AccountID: "acct-1"}}
 		return nil
 	}); err != nil {
 		t.Fatal(err)
 	}
-	application := New(store, quotaHost{})
+	host := &quotaHost{}
+	application := New(store, host)
 	response := callManagementWithHeaders(t, application, http.MethodPost, managementPrefix+"/credentials/quota", map[string]any{"identity": "identity-1"}, http.Header{"Authorization": []string{"Bearer key"}})
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("quota status = %d body=%s", response.StatusCode, response.Body)
@@ -167,6 +174,36 @@ func TestCredentialQuotaUsesCPAAPICall(t *testing.T) {
 	}
 	if got.Quota == nil || len(got.Quota.Rows) != 1 || got.Quota.Rows[0].UsedPercent == nil || *got.Quota.Rows[0].UsedPercent != 5 {
 		t.Fatalf("unexpected quota result: %#v", got)
+	}
+	requestBody := host.apiCallPayload["body"].([]byte)
+	var apiCall struct {
+		AuthIndex string            `json:"auth_index"`
+		Header    map[string]string `json:"header"`
+	}
+	if err := json.Unmarshal(requestBody, &apiCall); err != nil {
+		t.Fatal(err)
+	}
+	if apiCall.AuthIndex != "auth-1" || apiCall.Header["User-Agent"] == "" || apiCall.Header["Content-Type"] != "application/json" || apiCall.Header["Chatgpt-Account-Id"] != "acct-1" {
+		t.Fatalf("unexpected quota API call: %#v", apiCall)
+	}
+}
+
+func TestCodexQuotaHTTPErrorExplainsInvalidatedLogin(t *testing.T) {
+	message := codexQuotaHTTPError(http.StatusUnauthorized, []byte(`{"error":{"code":"token_invalidated"}}`))
+	if message != "凭据登录已失效，请重新登录" {
+		t.Fatalf("unexpected quota error: %q", message)
+	}
+}
+
+func TestResolveUsageRouteMapsCPAAuthIndexToManagedFilename(t *testing.T) {
+	store := state.New(filepath.Join(t.TempDir(), "state.json"))
+	value := model.NewState()
+	value.Credentials = []model.Credential{{Identity: "identity-1", AuthFile: "alice@example.com.json", RouteSlotID: "slot-1"}}
+	value.RouteSlots = []model.RouteSlot{{ID: "slot-1", CurrentNode: "node-a"}}
+	application := New(store, &quotaHost{})
+	slotID, node, ok := application.resolveUsageRoute(value, usageRecord{AuthIndex: "auth-1"})
+	if !ok || slotID != "slot-1" || node != "node-a" {
+		t.Fatalf("unexpected usage route: slot=%q node=%q ok=%v", slotID, node, ok)
 	}
 }
 
