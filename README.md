@@ -17,6 +17,8 @@ The plugin runs inside CLIProxyAPI. It reuses the existing CPA port and Manageme
 - LRU free-slot assignment plus share-least, reject, and default-route shortage policies
 - imports without an available Mihomo controller are retained as `pending` instead of pretending the route is ready
 - existing CPA Auth discovery and adoption, plus safe unmanage (the Auth file is retained)
+- per-credential enable/disable switch delegated to CPA's auth-files status API
+- credential overview grouped by allocator group
 - short toast feedback in the UI; credential and Listener edits use accessible modal dialogs
 - CPA `usage.handle` summaries split into SSE, WebSocket, other-stream, and non-stream buckets
 - Mihomo `/proxies` alive/history data exposed during route sync for node health display
@@ -60,6 +62,10 @@ plugins/data/cpa-route-allocator/state.json
 
 It can be overridden for local testing with `CPA_ROUTE_ALLOCATOR_STATE_PATH`.
 
+Credential enable/disable uses CPA's own Management API through the local loopback
+listener (`http://127.0.0.1:8317` by default). Set `CPA_ROUTE_ALLOCATOR_CPA_URL` if
+the Management API listens elsewhere.
+
 ## Routes
 
 Static UI:
@@ -93,6 +99,7 @@ POST /v0/management/plugins/cpa-route-allocator/upload
 POST /v0/management/plugins/cpa-route-allocator/import
 PUT  /v0/management/plugins/cpa-route-allocator/credentials/alias
 POST /v0/management/plugins/cpa-route-allocator/credentials/move
+PUT  /v0/management/plugins/cpa-route-allocator/credentials/status
 GET  /v0/management/plugins/cpa-route-allocator/credentials/local
 POST /v0/management/plugins/cpa-route-allocator/credentials/adopt
 DELETE /v0/management/plugins/cpa-route-allocator/credentials/managed

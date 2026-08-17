@@ -54,6 +54,7 @@ type RouteSlot struct {
 type Credential struct {
 	Identity    string    `json:"identity"`
 	AuthFile    string    `json:"auth_file"`
+	Disabled    bool      `json:"disabled"`
 	Email       string    `json:"email"`
 	Alias       string    `json:"alias,omitempty"`
 	Provider    string    `json:"provider"`

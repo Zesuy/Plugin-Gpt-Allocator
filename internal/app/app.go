@@ -193,6 +193,11 @@ type unmanageCredentialInput struct {
 	Identity string `json:"identity"`
 }
 
+type credentialStatusInput struct {
+	Identity string `json:"identity"`
+	Disabled bool   `json:"disabled"`
+}
+
 type routeSlotDeleteInput struct {
 	ID string `json:"id"`
 }
@@ -269,6 +274,7 @@ func managementRoutes() managementRegistration {
 			{Method: http.MethodPost, Path: "/plugins/" + PluginName + "/route-slots/select", Description: "Manually switch a route slot Selector node."},
 			{Method: http.MethodPut, Path: "/plugins/" + PluginName + "/credentials/alias", Description: "Override the display alias for a credential."},
 			{Method: http.MethodPost, Path: "/plugins/" + PluginName + "/credentials/move", Description: "Move an existing credential to another group."},
+			{Method: http.MethodPut, Path: "/plugins/" + PluginName + "/credentials/status", Description: "Enable or disable a managed credential through CPA."},
 			{Method: http.MethodGet, Path: "/plugins/" + PluginName + "/credentials/local", Description: "List existing CPA Auth files that can be managed."},
 			{Method: http.MethodPost, Path: "/plugins/" + PluginName + "/credentials/adopt", Description: "Add an existing CPA Auth file to allocator management."},
 			{Method: http.MethodDelete, Path: "/plugins/" + PluginName + "/credentials/managed", Description: "Stop managing a credential without deleting its CPA Auth file."},
@@ -333,6 +339,8 @@ func (a *App) handleManagement(raw []byte) (json.RawMessage, error) {
 		response, err = a.setCredentialAlias(req.Body)
 	case req.Method == http.MethodPost && path == managementPrefix+"/credentials/move":
 		response, err = a.moveCredential(req.Body)
+	case req.Method == http.MethodPut && path == managementPrefix+"/credentials/status":
+		response, err = a.setCredentialStatus(req.Body, req.Headers)
 	case req.Method == http.MethodGet && path == managementPrefix+"/credentials/local":
 		response, err = a.listLocalCredentials()
 	case req.Method == http.MethodPost && path == managementPrefix+"/credentials/adopt":

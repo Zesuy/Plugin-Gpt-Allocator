@@ -40,6 +40,8 @@ func (h *recordingHost) Call(method string, payload any) (json.RawMessage, error
 		auth := request["json"].(map[string]any)
 		h.saved[name] = auth
 		return json.Marshal(map[string]any{"name": name, "path": "/auth/" + name})
+	case "host.http.do":
+		return json.Marshal(map[string]any{"StatusCode": http.StatusNoContent})
 	default:
 		return json.RawMessage(`{}`), nil
 	}
@@ -367,6 +369,37 @@ func TestAliasAndMoveCredential(t *testing.T) {
 	}
 }
 
+func TestCredentialStatusDelegatesToCPA(t *testing.T) {
+	store := state.New(filepath.Join(t.TempDir(), "state.json"))
+	host := newRecordingHost()
+	application := New(store, host)
+	response := callManagement(t, application, http.MethodPut, managementPrefix+"/groups", map[string]any{
+		"name": "primary", "listener_pool": "default", "shortage_policy": "default_route",
+	})
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("group status = %d body=%s", response.StatusCode, response.Body)
+	}
+	response = callManagement(t, application, http.MethodPost, managementPrefix+"/upload", map[string]any{
+		"group": "primary", "credential": map[string]any{"access_token": "token", "email": "alice@example.com", "account_id": "account-1"},
+	})
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("upload status = %d body=%s", response.StatusCode, response.Body)
+	}
+	loaded, err := store.Load()
+	if err != nil || len(loaded.Credentials) != 1 {
+		t.Fatalf("credential was not created: err=%v state=%#v", err, loaded)
+	}
+	identity := loaded.Credentials[0].Identity
+	response = callManagementWithHeaders(t, application, http.MethodPut, managementPrefix+"/credentials/status", map[string]any{"identity": identity, "disabled": true}, http.Header{"Authorization": []string{"Bearer management-key"}})
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("disable status = %d body=%s", response.StatusCode, response.Body)
+	}
+	loaded, err = store.Load()
+	if err != nil || !loaded.Credentials[0].Disabled {
+		t.Fatalf("credential was not disabled: err=%v state=%#v", err, loaded)
+	}
+}
+
 func TestManagementCRUDAndAdoptLocalCredential(t *testing.T) {
 	store := state.New(filepath.Join(t.TempDir(), "state.json"))
 	host := newRecordingHost()
@@ -474,6 +507,10 @@ func TestGroupOrderCanBeReordered(t *testing.T) {
 }
 
 func callManagement(t *testing.T, application *App, method, path string, body any) managementResponse {
+	return callManagementWithHeaders(t, application, method, path, body, nil)
+}
+
+func callManagementWithHeaders(t *testing.T, application *App, method, path string, body any, headers http.Header) managementResponse {
 	t.Helper()
 	var bodyBytes []byte
 	if body != nil {
@@ -483,7 +520,7 @@ func callManagement(t *testing.T, application *App, method, path string, body an
 			t.Fatal(err)
 		}
 	}
-	req, err := json.Marshal(managementRequest{Method: method, Path: path, Body: bodyBytes})
+	req, err := json.Marshal(managementRequest{Method: method, Path: path, Headers: headers, Body: bodyBytes})
 	if err != nil {
 		t.Fatal(err)
 	}
