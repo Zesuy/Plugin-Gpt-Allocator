@@ -632,7 +632,14 @@ func (a *App) syncRouteSlots() (managementResponse, error) {
 		}(index, value.RouteSlots[index].ListenerURL)
 	}
 	probeWait.Wait()
-	if len(currentNodes) > 0 {
+	currentNodeChanged := false
+	for _, slot := range value.RouteSlots {
+		if node, ok := currentNodes[slot.ID]; ok && slot.CurrentNode != node {
+			currentNodeChanged = true
+			break
+		}
+	}
+	if currentNodeChanged {
 		if _, err := a.store.Update(func(state *model.State) error {
 			for index := range state.RouteSlots {
 				if node, ok := currentNodes[state.RouteSlots[index].ID]; ok {
