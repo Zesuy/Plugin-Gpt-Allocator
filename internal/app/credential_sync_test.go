@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/Zesuy/Plugin-Gpt-Allocator/internal/model"
@@ -61,7 +62,7 @@ func TestGetStateSynchronizesCredentialStatusFromCPA(t *testing.T) {
 		t.Fatal(err)
 	}
 	application := New(store, credentialSyncHost{files: []hostAuthFileEntry{
-		{Name: "disabled.json", AuthIndex: "auth-1", Disabled: true},
+		{Name: "disabled.json", AuthIndex: "auth-1", Disabled: true, Unavailable: true, Status: "error", StatusMessage: `{"detail":{"code":"deactivated_workspace"}}`},
 		{Name: "enabled.json", AuthIndex: "auth-2", Disabled: false},
 	}})
 	response := callManagement(t, application, http.MethodGet, managementPrefix+"/state", nil)
@@ -82,11 +83,25 @@ func TestGetStateSynchronizesCredentialStatusFromCPA(t *testing.T) {
 	if !byIdentity["disable-me"].Disabled || byIdentity["enable-me"].Disabled || !byIdentity["missing"].Disabled {
 		t.Fatalf("unexpected synchronized credentials: %#v", result.Credentials)
 	}
+	runtime, ok := result.CredentialRuntime["disable-me"]
+	if !ok || runtime.Status != "error" || !runtime.Unavailable || runtime.StatusMessage != `{"detail":{"code":"deactivated_workspace"}}` {
+		t.Fatalf("unexpected runtime status: %#v", result.CredentialRuntime)
+	}
+	if _, ok := result.CredentialRuntime["missing"]; ok {
+		t.Fatalf("missing CPA credential received runtime state: %#v", result.CredentialRuntime)
+	}
 	loaded, err := store.Load()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !loaded.Credentials[0].Disabled || loaded.Credentials[1].Disabled || !loaded.Credentials[2].Disabled {
 		t.Fatalf("synchronized status was not persisted: %#v", loaded.Credentials)
+	}
+	persisted, err := json.Marshal(loaded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(persisted), "deactivated_workspace") {
+		t.Fatalf("runtime status was persisted: %s", persisted)
 	}
 }

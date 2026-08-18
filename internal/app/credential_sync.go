@@ -18,13 +18,23 @@ type credentialStatusSyncInfo struct {
 
 type stateResult struct {
 	model.PublicState
-	CredentialStatusSync credentialStatusSyncInfo `json:"credential_status_sync"`
+	CredentialStatusSync credentialStatusSyncInfo           `json:"credential_status_sync"`
+	CredentialRuntime    map[string]credentialRuntimeStatus `json:"credential_runtime,omitempty"`
+}
+
+// credentialRuntimeStatus mirrors CPA's live Auth state. It is returned to the
+// UI but deliberately never persisted in allocator state, because CPA updates
+// it as real model requests succeed or fail.
+type credentialRuntimeStatus struct {
+	Status        string `json:"status,omitempty"`
+	StatusMessage string `json:"status_message,omitempty"`
+	Unavailable   bool   `json:"unavailable,omitempty"`
 }
 
 // stateWithCredentialStatusSync treats CPA's Auth list as the source of truth
 // for enabled/disabled state. Route ownership remains allocator-managed and is
 // deliberately left unchanged when a status was toggled outside this plugin.
-func (a *App) stateWithCredentialStatusSync() (model.State, credentialStatusSyncInfo, error) {
+func (a *App) stateWithCredentialStatusSync() (model.State, credentialStatusSyncInfo, map[string]credentialRuntimeStatus, error) {
 	now := time.Now().UTC()
 	info := credentialStatusSyncInfo{
 		Source:   "CPA host.auth.list",
@@ -32,13 +42,14 @@ func (a *App) stateWithCredentialStatusSync() (model.State, credentialStatusSync
 	}
 	value, err := a.store.Load()
 	if err != nil {
-		return model.State{}, info, err
+		return model.State{}, info, nil, err
 	}
 	files, err := a.listHostAuthFiles()
 	if err != nil {
 		info.Error = "读取 CPA 凭据状态失败"
-		return value, info, nil
+		return value, info, nil, nil
 	}
+	runtime := credentialRuntimeStatuses(value, files)
 	statuses := make(map[string]bool, len(files))
 	for _, file := range files {
 		name := strings.ToLower(strings.TrimSpace(file.Name))
@@ -49,16 +60,39 @@ func (a *App) stateWithCredentialStatusSync() (model.State, credentialStatusSync
 	working := cloneState(value)
 	info.Matched, info.Updated, info.Missing = applyCredentialStatuses(&working, statuses, now)
 	if info.Updated == 0 {
-		return value, info, nil
+		return value, info, runtime, nil
 	}
 	updated, err := a.store.Update(func(state *model.State) error {
 		applyCredentialStatuses(state, statuses, now)
 		return nil
 	})
 	if err != nil {
-		return model.State{}, info, err
+		return model.State{}, info, nil, err
 	}
-	return updated, info, nil
+	return updated, info, runtime, nil
+}
+
+func credentialRuntimeStatuses(value model.State, files []hostAuthFileEntry) map[string]credentialRuntimeStatus {
+	byName := make(map[string]hostAuthFileEntry, len(files))
+	for _, file := range files {
+		name := strings.ToLower(strings.TrimSpace(file.Name))
+		if name != "" {
+			byName[name] = file
+		}
+	}
+	runtime := make(map[string]credentialRuntimeStatus)
+	for _, credential := range value.Credentials {
+		file, ok := byName[strings.ToLower(strings.TrimSpace(credential.AuthFile))]
+		if !ok {
+			continue
+		}
+		runtime[credential.Identity] = credentialRuntimeStatus{
+			Status:        strings.TrimSpace(file.Status),
+			StatusMessage: strings.TrimSpace(file.StatusMessage),
+			Unavailable:   file.Unavailable,
+		}
+	}
+	return runtime
 }
 
 func applyCredentialStatuses(value *model.State, statuses map[string]bool, now time.Time) (matched, updated, missing int) {

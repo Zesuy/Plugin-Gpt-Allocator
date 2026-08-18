@@ -157,14 +157,17 @@ type pendingSave struct {
 }
 
 type hostAuthFileEntry struct {
-	AuthIndex   string `json:"auth_index"`
-	Name        string `json:"name"`
-	Email       string `json:"email,omitempty"`
-	Provider    string `json:"provider,omitempty"`
-	Type        string `json:"type,omitempty"`
-	Label       string `json:"label,omitempty"`
-	Disabled    bool   `json:"disabled,omitempty"`
-	RuntimeOnly bool   `json:"runtime_only,omitempty"`
+	AuthIndex     string `json:"auth_index"`
+	Name          string `json:"name"`
+	Email         string `json:"email,omitempty"`
+	Provider      string `json:"provider,omitempty"`
+	Type          string `json:"type,omitempty"`
+	Label         string `json:"label,omitempty"`
+	Disabled      bool   `json:"disabled,omitempty"`
+	Unavailable   bool   `json:"unavailable,omitempty"`
+	Status        string `json:"status,omitempty"`
+	StatusMessage string `json:"status_message,omitempty"`
+	RuntimeOnly   bool   `json:"runtime_only,omitempty"`
 }
 
 type hostAuthListResponse struct {
@@ -395,13 +398,14 @@ func (a *App) handleManagement(raw []byte) (json.RawMessage, error) {
 }
 
 func (a *App) getState() (managementResponse, error) {
-	value, syncInfo, err := a.stateWithCredentialStatusSync()
+	value, syncInfo, runtime, err := a.stateWithCredentialStatusSync()
 	if err != nil {
 		return managementResponse{}, err
 	}
 	return jsonResponse(http.StatusOK, stateResult{
 		PublicState:          value.Public(),
 		CredentialStatusSync: syncInfo,
+		CredentialRuntime:    runtime,
 	}), nil
 }
 

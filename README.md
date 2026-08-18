@@ -44,6 +44,7 @@ CLIProxyAPI 可以保存多份 Codex 凭据，但当凭据需要按账号组使�
 | **统一凭据命名** | 默认使用完整邮箱；同邮箱的不同工作区或鉴权上下文自动使用 `_1`、`_2` 后缀，页面别名不改动文件名 |
 | **已有凭据接管** | 发现 CPA 本地 Auth 文件并选择分组接管；停止管理时保留原 Auth 文件 |
 | **CPA 状态同步** | 页面开关通过 CPA Management API 启用或停用凭据；打开页面和手动同步时以 CPA 的真实 `disabled` 状态为准 |
+| **CPA 运行告警** | 直接读取 CPA 根据真实模型请求维护的 `status`、`status_message` 和 `unavailable`，在凭据卡片显示工作区停用、登录失效等原因 |
 | **分组策略** | 每组独立配置 Priority、WebSocket、Listener Pool 和出口不足策略；支持拖动调整分组顺序 |
 | **Listener 管理** | 新建、复制、编辑和删除 Listener / Selector 映射；Selector 名称直接从 Mihomo 读取 |
 | **出口诊断** | 通过每个 Listener 请求 `chatgpt.com/cdn-cgi/trace`，显示当前公网 IP 和首字节延迟 |
@@ -68,6 +69,8 @@ CLIProxyAPI 可以保存多份 Codex 凭据，但当凭据需要按账号组使�
 
 - 在插件页面切换开关时，插件先调用 CPA 的 Auth status API，成功后才更新本地状态。
 - 页面首次加载或点击 **同步 CPA** 时，插件读取 CPA `host.auth.list`，按 Auth 文件名同步 `disabled`。
+- 同一次读取也会取得 CPA 的实时错误状态；插件不主动发送模型测试请求，不额外消耗额度，也不会因告警自动停用凭据。
+- 运行告警只返回给当前页面，不写入 `state.json`；CPA 后续真实请求恢复后，刷新页面即可看到最新状态。
 - 同步只改变启用状态和更新时间，不改变凭据的分组、Listener 或当前节点。
 - CPA 暂时不可读时保留最后一次状态，并在页面顶部显示同步失败。
 - 已管理凭据在 CPA 中找不到时只做提示，不会自动删除或改成启用。
