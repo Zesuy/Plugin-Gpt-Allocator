@@ -567,6 +567,43 @@ func TestCredentialReassignIgnoresItsOwnPreviousSlotUsage(t *testing.T) {
 	}
 }
 
+func TestPrepareNewRouteInheritsSelectorNodeWithoutSwitching(t *testing.T) {
+	putCalls := 0
+	mihomoServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method == http.MethodGet && request.URL.Path == "/proxies/target-selector" {
+			_, _ = writer.Write([]byte(`{"name":"target-selector","type":"Selector","now":"node-a","all":["node-a","node-b"]}`))
+			return
+		}
+		if request.Method == http.MethodPut {
+			putCalls++
+			writer.WriteHeader(http.StatusNoContent)
+			return
+		}
+		http.NotFound(writer, request)
+	}))
+	defer mihomoServer.Close()
+
+	value := model.NewState()
+	value.Settings.MihomoControllerURL = mihomoServer.URL
+	value.RouteSlots = []model.RouteSlot{
+		{ID: "target", Selector: "target-selector", CurrentNode: "node-a"},
+		{ID: "other", Selector: "other-selector", CurrentNode: "node-a"},
+	}
+	value.Credentials = []model.Credential{{Identity: "existing", RouteSlotID: "other", RouteStatus: model.RouteStatusAssigned}}
+	credential := &model.Credential{Identity: "new", RouteSlotID: "target", RouteStatus: model.RouteStatusAssigned}
+
+	application := New(state.New(filepath.Join(t.TempDir(), "state.json")), fakeHost{})
+	if err := application.prepareNewRoute(&value, credential); err != nil {
+		t.Fatalf("prepareNewRoute returned error: %v", err)
+	}
+	if putCalls != 0 {
+		t.Fatalf("prepareNewRoute switched Mihomo Selector %d times", putCalls)
+	}
+	if got := value.RouteSlots[0].CurrentNode; got != "node-a" {
+		t.Fatalf("inherited current node = %q, want node-a", got)
+	}
+}
+
 func TestCredentialStatusDelegatesToCPA(t *testing.T) {
 	store := state.New(filepath.Join(t.TempDir(), "state.json"))
 	host := newRecordingHost()
@@ -621,22 +658,6 @@ func TestCredentialStatusReportsEnabledRouteConflict(t *testing.T) {
 	}
 	if result.RouteConflict == nil || result.RouteConflict.RouteSlotID != "slot-1" || result.RouteConflict.EnabledCount != 1 || len(result.RouteConflict.EnabledIdentities) != 1 || result.RouteConflict.EnabledIdentities[0] != "enabled@example.com" {
 		t.Fatalf("unexpected route conflict: %#v", result.RouteConflict)
-	}
-}
-
-func TestLeastUsedNodeIgnoresDisabledCredentials(t *testing.T) {
-	value := model.NewState()
-	value.RouteSlots = []model.RouteSlot{
-		{ID: "target", CurrentNode: "node-a"},
-		{ID: "active-slot", CurrentNode: "node-a"},
-		{ID: "disabled-slot", CurrentNode: "node-b"},
-	}
-	value.Credentials = []model.Credential{
-		{Identity: "active", RouteSlotID: "active-slot"},
-		{Identity: "disabled", RouteSlotID: "disabled-slot", Disabled: true},
-	}
-	if got := leastUsedNode(value, value.RouteSlots[0], []string{"node-a", "node-b"}); got != "node-b" {
-		t.Fatalf("disabled credential consumed node capacity: got %q", got)
 	}
 }
 

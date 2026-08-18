@@ -1041,55 +1041,17 @@ func (a *App) prepareNewRoute(value *model.State, credential *model.Credential) 
 		}
 		return nil
 	}
-	node := leastUsedNode(*value, *slot, selector.All)
-	if node == "" {
+	// Assigning a credential to a Listener must not implicitly rotate the
+	// Listener's Mihomo Selector. Other credentials may already share this
+	// Listener, so changing the node here would unexpectedly move all of them.
+	// Inherit the Selector's current node and leave the route pending only when
+	// Mihomo has not selected one yet.
+	if strings.TrimSpace(selector.Now) == "" {
 		credential.RouteStatus = model.RouteStatusPending
-		return errors.New("Selector has no usable nodes")
+		return errors.New("Selector has no current node")
 	}
-	if node != selector.Now {
-		if err := client.Select(ctx, slot.Selector, node); err != nil {
-			credential.RouteStatus = model.RouteStatusPending
-			return err
-		}
-	}
-	slot.CurrentNode = node
+	slot.CurrentNode = selector.Now
 	return nil
-}
-
-func leastUsedNode(value model.State, slot model.RouteSlot, nodes []string) string {
-	usage := make(map[string]int)
-	for _, credential := range value.Credentials {
-		if credential.Disabled || credential.RouteSlotID == "" || credential.RouteSlotID == slot.ID {
-			continue
-		}
-		for _, candidate := range value.RouteSlots {
-			if candidate.ID == credential.RouteSlotID && candidate.CurrentNode != "" {
-				usage[candidate.CurrentNode]++
-				break
-			}
-		}
-	}
-	unique := make(map[string]struct{}, len(nodes))
-	for _, node := range nodes {
-		node = strings.TrimSpace(node)
-		if node != "" {
-			unique[node] = struct{}{}
-		}
-	}
-	ordered := make([]string, 0, len(unique))
-	for node := range unique {
-		ordered = append(ordered, node)
-	}
-	sort.Slice(ordered, func(i, j int) bool {
-		if usage[ordered[i]] != usage[ordered[j]] {
-			return usage[ordered[i]] < usage[ordered[j]]
-		}
-		return ordered[i] < ordered[j]
-	})
-	if len(ordered) == 0 {
-		return strings.TrimSpace(slot.CurrentNode)
-	}
-	return ordered[0]
 }
 
 func (a *App) listHostAuthFiles() ([]hostAuthFileEntry, error) {
