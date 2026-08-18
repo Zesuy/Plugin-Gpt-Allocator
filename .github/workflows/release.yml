@@ -32,8 +32,8 @@ jobs:
     name: Release checks
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version: "1.22.x"
           cache: true
@@ -85,13 +85,13 @@ jobs:
             goos: windows
             goarch: arm64
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         if: matrix.goos != 'linux'
         with:
           go-version: "1.22.12"
           cache: true
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         if: matrix.goos != 'linux'
         with:
           python-version: "3.x"
@@ -117,7 +117,7 @@ jobs:
           TARGET_GOARCH: ${{ matrix.goarch }}
           DIST_DIR: dist
         run: ./scripts/ci-package.sh
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: release-${{ matrix.target }}
           path: dist/plugin-gpt-allocator_${{ needs.version.outputs.value }}_${{ matrix.goos }}_${{ matrix.goarch }}.zip
@@ -128,7 +128,7 @@ jobs:
     needs: [version, package]
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: release-*
           path: dist
@@ -150,7 +150,7 @@ jobs:
           (dist / "checksums.txt").write_text("\n".join(lines) + "\n", encoding="ascii")
           PY
       - name: Upload assets to draft release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: v${{ needs.version.outputs.value }}
           target_commitish: ${{ github.sha }}

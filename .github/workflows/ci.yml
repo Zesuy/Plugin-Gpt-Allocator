@@ -17,8 +17,8 @@ jobs:
     name: Go and UI checks
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version: "1.22.x"
           cache: true
@@ -44,7 +44,7 @@ jobs:
     needs: checks
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Build and verify package
         shell: bash
         env:
@@ -55,7 +55,7 @@ jobs:
           DIST_DIR: dist
         run: ./scripts/ci-package.sh
       - name: Upload package smoke artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: plugin-gpt-allocator-linux-amd64
           path: dist/*
