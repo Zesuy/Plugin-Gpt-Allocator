@@ -1054,7 +1054,7 @@ func (a *App) prepareNewRoute(value *model.State, credential *model.Credential) 
 func leastUsedNode(value model.State, slot model.RouteSlot, nodes []string) string {
 	usage := make(map[string]int)
 	for _, credential := range value.Credentials {
-		if credential.RouteSlotID == "" || credential.RouteSlotID == slot.ID {
+		if credential.Disabled || credential.RouteSlotID == "" || credential.RouteSlotID == slot.ID {
 			continue
 		}
 		for _, candidate := range value.RouteSlots {

@@ -24,6 +24,20 @@ type hostHTTPResponse struct {
 	Body       []byte      `json:"Body"`
 }
 
+type credentialRouteConflict struct {
+	RouteSlotID       string   `json:"route_slot_id"`
+	EnabledCount      int      `json:"enabled_count"`
+	EnabledIdentities []string `json:"enabled_identities"`
+}
+
+// credentialStatusResult keeps the normal PublicState response shape while
+// adding a small, non-persistent hint for the enable flow. The UI can ask the
+// user whether to reassign instead of silently moving a credential.
+type credentialStatusResult struct {
+	model.PublicState
+	RouteConflict *credentialRouteConflict `json:"route_conflict,omitempty"`
+}
+
 func init() {
 	if value := strings.TrimRight(strings.TrimSpace(os.Getenv("CPA_ROUTE_ALLOCATOR_CPA_URL")), "/"); value != "" {
 		cpaManagementURL = value
@@ -119,22 +133,22 @@ func (a *App) setCredentialStatus(body []byte, requestHeaders http.Header) (mana
 	if err != nil {
 		return managementResponse{}, upstreamError("update CPA Auth status: " + err.Error())
 	}
-	var result hostHTTPResponse
-	if err := json.Unmarshal(raw, &result); err != nil {
+	var hostResult hostHTTPResponse
+	if err := json.Unmarshal(raw, &hostResult); err != nil {
 		return managementResponse{}, upstreamError("decode CPA Auth status response: " + err.Error())
 	}
-	if result.StatusCode < 200 || result.StatusCode >= 300 {
+	if hostResult.StatusCode < 200 || hostResult.StatusCode >= 300 {
 		detail := ""
 		var apiError struct {
 			Error string `json:"error"`
 		}
-		if json.Unmarshal(result.Body, &apiError) == nil {
+		if json.Unmarshal(hostResult.Body, &apiError) == nil {
 			detail = strings.TrimSpace(apiError.Error)
 		}
 		if detail != "" {
-			return managementResponse{}, upstreamError(fmt.Sprintf("CPA Auth status returned HTTP %d: %s", result.StatusCode, detail))
+			return managementResponse{}, upstreamError(fmt.Sprintf("CPA Auth status returned HTTP %d: %s", hostResult.StatusCode, detail))
 		}
-		return managementResponse{}, upstreamError(fmt.Sprintf("CPA Auth status returned HTTP %d", result.StatusCode))
+		return managementResponse{}, upstreamError(fmt.Sprintf("CPA Auth status returned HTTP %d", hostResult.StatusCode))
 	}
 	updated, err := a.store.Update(func(state *model.State) error {
 		for index := range state.Credentials {
@@ -149,5 +163,38 @@ func (a *App) setCredentialStatus(body []byte, requestHeaders http.Header) (mana
 	if err != nil {
 		return managementResponse{}, err
 	}
-	return jsonResponse(http.StatusOK, updated.Public()), nil
+	result := credentialStatusResult{PublicState: updated.Public()}
+	if !input.Disabled {
+		result.RouteConflict = findCredentialRouteConflict(updated, input.Identity)
+	}
+	return jsonResponse(http.StatusOK, result), nil
+}
+
+func findCredentialRouteConflict(value model.State, identity string) *credentialRouteConflict {
+	var target *model.Credential
+	for index := range value.Credentials {
+		if value.Credentials[index].Identity == identity {
+			target = &value.Credentials[index]
+			break
+		}
+	}
+	if target == nil || target.RouteSlotID == "" || target.Disabled {
+		return nil
+	}
+	conflict := &credentialRouteConflict{RouteSlotID: target.RouteSlotID}
+	for _, credential := range value.Credentials {
+		if credential.Identity == identity || credential.Disabled || credential.RouteSlotID != target.RouteSlotID {
+			continue
+		}
+		name := credential.DisplayName()
+		if name == "" {
+			name = credential.Identity
+		}
+		conflict.EnabledIdentities = append(conflict.EnabledIdentities, name)
+	}
+	conflict.EnabledCount = len(conflict.EnabledIdentities)
+	if conflict.EnabledCount == 0 {
+		return nil
+	}
+	return conflict
 }

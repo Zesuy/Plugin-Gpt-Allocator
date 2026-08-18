@@ -598,6 +598,48 @@ func TestCredentialStatusDelegatesToCPA(t *testing.T) {
 	}
 }
 
+func TestCredentialStatusReportsEnabledRouteConflict(t *testing.T) {
+	store := state.New(filepath.Join(t.TempDir(), "state.json"))
+	if _, err := store.Update(func(value *model.State) error {
+		value.Credentials = []model.Credential{
+			{Identity: "target", AuthFile: "target.json", Email: "target@example.com", Disabled: true, RouteSlotID: "slot-1", RouteStatus: model.RouteStatusAssigned},
+			{Identity: "enabled-peer", AuthFile: "enabled.json", Email: "enabled@example.com", RouteSlotID: "slot-1", RouteStatus: model.RouteStatusAssigned},
+			{Identity: "disabled-peer", AuthFile: "disabled.json", Email: "disabled@example.com", Disabled: true, RouteSlotID: "slot-1", RouteStatus: model.RouteStatusAssigned},
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	application := New(store, newRecordingHost())
+	response := callManagementWithHeaders(t, application, http.MethodPut, managementPrefix+"/credentials/status", map[string]any{"identity": "target", "disabled": false}, http.Header{"Authorization": []string{"Bearer management-key"}})
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("enable status = %d body=%s", response.StatusCode, response.Body)
+	}
+	var result credentialStatusResult
+	if err := json.Unmarshal(response.Body, &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.RouteConflict == nil || result.RouteConflict.RouteSlotID != "slot-1" || result.RouteConflict.EnabledCount != 1 || len(result.RouteConflict.EnabledIdentities) != 1 || result.RouteConflict.EnabledIdentities[0] != "enabled@example.com" {
+		t.Fatalf("unexpected route conflict: %#v", result.RouteConflict)
+	}
+}
+
+func TestLeastUsedNodeIgnoresDisabledCredentials(t *testing.T) {
+	value := model.NewState()
+	value.RouteSlots = []model.RouteSlot{
+		{ID: "target", CurrentNode: "node-a"},
+		{ID: "active-slot", CurrentNode: "node-a"},
+		{ID: "disabled-slot", CurrentNode: "node-b"},
+	}
+	value.Credentials = []model.Credential{
+		{Identity: "active", RouteSlotID: "active-slot"},
+		{Identity: "disabled", RouteSlotID: "disabled-slot", Disabled: true},
+	}
+	if got := leastUsedNode(value, value.RouteSlots[0], []string{"node-a", "node-b"}); got != "node-b" {
+		t.Fatalf("disabled credential consumed node capacity: got %q", got)
+	}
+}
+
 func TestCPAManagementBaseURLFollowsManagementOrigin(t *testing.T) {
 	previousURL, previousExplicit := cpaManagementURL, cpaManagementURLExplicit
 	defer func() {

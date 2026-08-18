@@ -20,7 +20,10 @@ type Assignment struct {
 func Assign(value *model.State, group model.Group, now time.Time) (Assignment, error) {
 	usage := make(map[string]int)
 	for _, credential := range value.Credentials {
-		if credential.RouteSlotID != "" {
+		// Disabled credentials do not consume an active Listener. This lets a
+		// newly enabled credential reuse a slot that is only held by dormant
+		// credentials without being classified as a shortage share.
+		if credential.RouteSlotID != "" && !credential.Disabled {
 			usage[credential.RouteSlotID]++
 		}
 	}

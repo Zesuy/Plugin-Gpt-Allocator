@@ -45,6 +45,26 @@ func TestAssignSharesLeastUsedSlot(t *testing.T) {
 	}
 }
 
+func TestAssignTreatsDisabledCredentialsAsFreeCapacity(t *testing.T) {
+	now := time.Now().UTC()
+	value := model.NewState()
+	value.RouteSlots = []model.RouteSlot{
+		{ID: "dormant", Pool: "default", ListenerURL: "socks5://127.0.0.1:1"},
+		{ID: "active", Pool: "default", ListenerURL: "socks5://127.0.0.1:2"},
+	}
+	value.Credentials = []model.Credential{
+		{Identity: "disabled", RouteSlotID: "dormant", Disabled: true},
+		{Identity: "enabled", RouteSlotID: "active"},
+	}
+	got, err := Assign(&value, model.Group{ListenerPool: "default", ShortagePolicy: model.ShortageReject}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.RouteSlotID != "dormant" || got.RouteStatus != model.RouteStatusAssigned {
+		t.Fatalf("disabled-only Listener was not treated as free: %#v", got)
+	}
+}
+
 func TestAssignHonorsDefaultAndRejectPolicies(t *testing.T) {
 	value := model.NewState()
 	defaultRoute, err := Assign(&value, model.Group{ListenerPool: "missing", ShortagePolicy: model.ShortageDefault}, time.Now())
