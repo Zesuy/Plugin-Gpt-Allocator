@@ -22,7 +22,6 @@ type listenerProbe struct {
 	IP        string `json:"ip,omitempty"`
 	Location  string `json:"location,omitempty"`
 	Colo      string `json:"colo,omitempty"`
-	TotalMS   int64  `json:"total_ms,omitempty"`
 	TTFTMS    int64  `json:"ttft_ms,omitempty"`
 	CheckedAt string `json:"checked_at,omitempty"`
 	Error     string `json:"error,omitempty"`
@@ -82,7 +81,6 @@ func probeListener(ctx context.Context, listenerURL string) listenerProbe {
 	result.IP = fields["ip"]
 	result.Location = fields["loc"]
 	result.Colo = fields["colo"]
-	result.TotalMS = time.Since(started).Milliseconds()
 	if !firstByteAt.IsZero() {
 		result.TTFTMS = firstByteAt.Sub(started).Milliseconds()
 	}

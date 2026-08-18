@@ -141,7 +141,7 @@ Listener 不再使用普通配置表格，而是使用与凭据相同的卡片�
 │ 203.0.113.20 · US / SJC                  │
 │                                          │
 │ Listener 请求                             │
-│ 总耗时 680 ms · 首字节 430 ms             │
+│ 首字节 430 ms                              │
 │                                          │
 │ 节点请求质量                              │
 │ 成功 31 · 网络断开 0 · 上游错误 2          │
@@ -249,7 +249,6 @@ CPA usage 记录中的 `AuthIndex` 用于找到凭据，再找到 Listener。插
 
 - IP
 - 地区和机房
-- 总耗时
 - 首字节耗时
 - 检测时间
 - 失败原因
@@ -330,7 +329,6 @@ POST /route-slots/deduplicate
   "current_node": "JP-日本高速05",
   "listener_probe": {
     "ip": "203.0.113.20",
-    "total_ms": 680,
     "ttft_ms": 430,
     "checked_at": "..."
   },
@@ -368,8 +366,8 @@ POST /route-slots/deduplicate
 
 出口探测与真实请求统计是两组不同数据，必须分开展示：
 
-- **出口探测**：插件经由某个 Listener / 当前节点请求 `chatgpt.com/cdn-cgi/trace` 得到的单次公网 IP、首字节和总耗时。
-- **真实请求统计**：CPA `usage.handle` 记录的请求样本，按 Listener、节点和 SSE / WebSocket / 其他传输方式聚合，计算请求数、TTFT 均值、总耗时均值和 p50 / p95。
+- **出口探测**：插件经由某个 Listener / 当前节点请求 `chatgpt.com/cdn-cgi/trace` 得到的单次公网 IP 和首字节延迟。
+- **真实请求统计**：CPA `usage.handle` 记录的请求样本，按 Listener、节点和 SSE / WebSocket / 其他传输方式聚合，计算请求数以及 TTFT 均值、p50 和 p95。
 - 两组数据的采样时间、请求类型和样本数量都可能不同，因此不要求数值相等；标签必须包含“出口探测”或“真实请求”。
 
 `share_least` 的容量统计只计算启用凭据。停用凭据仍保留原来的路由归属，但不占用 Listener 的共用次数；重新启用时，如果发现该 Listener 已被其他启用凭据共用，界面必须先提示用户选择“保持共用”或“重新分配到其他 Listener”。

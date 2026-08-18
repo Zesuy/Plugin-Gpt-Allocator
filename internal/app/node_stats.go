@@ -25,10 +25,9 @@ const (
 )
 
 type nodeSample struct {
-	At        time.Time
-	LatencyMS int64
-	TTFTMS    int64
-	Class     nodeResultClass
+	At     time.Time
+	TTFTMS int64
+	Class  nodeResultClass
 }
 
 type nodeBucketKey struct {
@@ -55,7 +54,7 @@ func (s *nodeStatsStore) add(slotID, node, transport string, class nodeResultCla
 	if at.IsZero() {
 		at = time.Now().UTC()
 	}
-	sample := nodeSample{At: at.UTC(), LatencyMS: record.Latency.Milliseconds(), TTFTMS: record.TTFT.Milliseconds(), Class: class}
+	sample := nodeSample{At: at.UTC(), TTFTMS: record.TTFT.Milliseconds(), Class: class}
 	key := nodeBucketKey{SlotID: slotID, Node: node, Transport: transport}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -86,10 +85,9 @@ type nodeStatsSummary struct {
 	Timeouts           int64            `json:"timeouts"`
 	UnknownErrors      int64            `json:"unknown_errors"`
 	NetworkFailureRate float64          `json:"network_failure_rate"`
-	AverageLatencyMS   *float64         `json:"average_latency_ms,omitempty"`
-	P50LatencyMS       *float64         `json:"p50_latency_ms,omitempty"`
-	P95LatencyMS       *float64         `json:"p95_latency_ms,omitempty"`
 	AverageTTFTMS      *float64         `json:"average_ttft_ms,omitempty"`
+	P50TTFTMS          *float64         `json:"p50_ttft_ms,omitempty"`
+	P95TTFTMS          *float64         `json:"p95_ttft_ms,omitempty"`
 	Congestion         string           `json:"congestion"`
 	LastAt             *time.Time       `json:"last_at,omitempty"`
 	FailureReasons     map[string]int64 `json:"failure_reasons,omitempty"`
@@ -122,9 +120,8 @@ func summarizeNodeSamples(values []nodeSample) nodeStatsSummary {
 	if len(values) == 0 {
 		return result
 	}
-	latencies := make([]float64, 0, len(values))
 	ttfts := make([]float64, 0, len(values))
-	var latencyTotal, ttftTotal int64
+	var ttftTotal int64
 	var lastAt time.Time
 	for _, sample := range values {
 		result.Requests++
@@ -140,11 +137,6 @@ func summarizeNodeSamples(values []nodeSample) nodeStatsSummary {
 		default:
 			result.UnknownErrors++
 		}
-		if sample.LatencyMS > 0 {
-			latency := float64(sample.LatencyMS)
-			latencies = append(latencies, latency)
-			latencyTotal += sample.LatencyMS
-		}
 		if sample.TTFTMS > 0 {
 			ttft := float64(sample.TTFTMS)
 			ttfts = append(ttfts, ttft)
@@ -157,23 +149,19 @@ func summarizeNodeSamples(values []nodeSample) nodeStatsSummary {
 	if result.Requests > 0 {
 		result.NetworkFailureRate = float64(result.NetworkErrors+result.Timeouts) / float64(result.Requests)
 	}
-	if len(latencies) > 0 {
-		average := float64(latencyTotal) / float64(len(latencies))
-		result.AverageLatencyMS = &average
-		sort.Float64s(latencies)
-		p50 := percentile(latencies, 0.50)
-		p95 := percentile(latencies, 0.95)
-		result.P50LatencyMS = &p50
-		result.P95LatencyMS = &p95
-	}
 	if len(ttfts) > 0 {
 		average := float64(ttftTotal) / float64(len(ttfts))
 		result.AverageTTFTMS = &average
+		sort.Float64s(ttfts)
+		p50 := percentile(ttfts, 0.50)
+		p95 := percentile(ttfts, 0.95)
+		result.P50TTFTMS = &p50
+		result.P95TTFTMS = &p95
 	}
 	if !lastAt.IsZero() {
 		result.LastAt = &lastAt
 	}
-	result.Congestion = congestionLabel(result, latencies)
+	result.Congestion = congestionLabel(result, ttfts)
 	return result
 }
 
@@ -191,14 +179,14 @@ func percentile(values []float64, ratio float64) float64 {
 	return values[index]
 }
 
-func congestionLabel(summary nodeStatsSummary, latencies []float64) string {
+func congestionLabel(summary nodeStatsSummary, ttfts []float64) string {
 	if summary.Requests < 5 {
 		return "data_insufficient"
 	}
 	if summary.NetworkFailureRate >= 0.20 {
 		return "network_unstable"
 	}
-	if len(latencies) >= 5 && summary.P50LatencyMS != nil && summary.P95LatencyMS != nil && *summary.P95LatencyMS >= 2*(*summary.P50LatencyMS) && *summary.P95LatencyMS >= 1500 {
+	if len(ttfts) >= 5 && summary.P50TTFTMS != nil && summary.P95TTFTMS != nil && *summary.P95TTFTMS >= 2*(*summary.P50TTFTMS) && *summary.P95TTFTMS >= 1500 {
 		return "congestion_suspected"
 	}
 	return "normal"

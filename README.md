@@ -46,8 +46,8 @@ CLIProxyAPI 可以保存多份 Codex 凭据，但当凭据需要按账号组使�
 | **CPA 状态同步** | 页面开关通过 CPA Management API 启用或停用凭据；打开页面和手动同步时以 CPA 的真实 `disabled` 状态为准 |
 | **分组策略** | 每组独立配置 Priority、WebSocket、Listener Pool 和出口不足策略；支持拖动调整分组顺序 |
 | **Listener 管理** | 新建、复制、编辑和删除 Listener / Selector 映射；Selector 名称直接从 Mihomo 读取 |
-| **出口诊断** | 通过每个 Listener 请求 `chatgpt.com/cdn-cgi/trace`，显示当前公网 IP、首字节和总耗时 |
-| **节点统计** | 按 Listener、节点和 SSE / WebSocket / 其他请求分别记录 TTFT、总耗时、p95、网络断开与上游错误 |
+| **出口诊断** | 通过每个 Listener 请求 `chatgpt.com/cdn-cgi/trace`，显示当前公网 IP 和首字节延迟 |
+| **节点统计** | 按 Listener、节点和 SSE / WebSocket / 其他请求分别记录 TTFT 均值与 p95、网络断开和上游错误 |
 | **手动去重** | 找出公网 IP 重复的 Listener，预览影响范围，尝试未知节点并验证新 IP；失败时回滚原节点 |
 | **Codex 额度** | 按凭据手动读取额度窗口，分别展示主窗口和次窗口，不把不同窗口合并成一个数字 |
 
@@ -213,12 +213,12 @@ curl -X POST \
 
 | 数据 | 来源 | 保存方式 |
 | --- | --- | --- |
-| Listener 公网 IP、TTFT、总耗时 | 经对应 Listener 请求 `cdn-cgi/trace` 的单次探测 | 每次诊断重新读取 |
+| Listener 公网 IP、TTFT | 经对应 Listener 请求 `cdn-cgi/trace` 的单次探测 | 每次诊断重新读取 |
 | SSE / WebSocket / 非流式总览 | CPA `usage.handle` | 进程内从插件启动开始累计，重启清空 |
 | 节点真实请求样本 | `route_slot_id + node + transport` | 每桶最多 1000 条且最长 6 小时，重启清空 |
 | Selector 切换历史 | 插件记录的节点变化 | 每个 Listener 最多 100 条，重启清空 |
 
-真实请求统计中的 TTFT 和总耗时来自同一个 CPA usage 事件；OpenAI 4xx/5xx 记为上游错误，不直接认定为节点网络故障。
+真实请求统计中的 TTFT 来自 CPA usage 事件；OpenAI 4xx/5xx 记为上游错误，不直接认定为节点网络故障。
 EOF、连接重置、TLS、代理连接失败和超时会进入节点网络错误或超时统计。
 
 ## 手动去除重复公网 IP
@@ -290,7 +290,7 @@ VERSION=0.1.0 ./scripts/package-smoke.sh
 - [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)：插件宿主、Management API 与 usage 事件。
 - [Cli-Proxy-API-Management-Center](https://github.com/router-for-me/Cli-Proxy-API-Management-Center)：凭据卡片和管理页面的信息架构参考。
 - [GPTSession2CPAandSub2API](https://github.com/gtxx3600/GPTSession2CPAandSub2API)：CPA / sub2api 凭据转换思路参考。
-- [cpa-usage-keeper](https://github.com/Willxup/cpa-usage-keeper)：TTFT、总耗时和额度读取方式参考。
+- [cpa-usage-keeper](https://github.com/Willxup/cpa-usage-keeper)：TTFT 和额度读取方式参考。
 - [Plugin-Deepseek-Vision](https://github.com/Zesuy/Plugin-Deepseek-Vision)：README、CI 与 Draft Release 工作流组织参考。
 
 ---

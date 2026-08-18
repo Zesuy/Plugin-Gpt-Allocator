@@ -317,8 +317,8 @@ func candidateNodes(slot syncedRouteSlot, snapshot map[string]syncedRouteSlot, l
 		if aliveRank(iAlive) != aliveRank(jAlive) {
 			return aliveRank(iAlive) < aliveRank(jAlive)
 		}
-		iP95 := slot.NodeStats[result[i]].All.P95LatencyMS
-		jP95 := slot.NodeStats[result[j]].All.P95LatencyMS
+		iP95 := slot.NodeStats[result[i]].All.P95TTFTMS
+		jP95 := slot.NodeStats[result[j]].All.P95TTFTMS
 		if iP95 != nil && jP95 != nil && *iP95 != *jP95 {
 			return *iP95 < *jP95
 		}
@@ -384,7 +384,7 @@ func candidateMetrics(slot syncedRouteSlot, node string) (*bool, *int, *float64)
 		value := health.History[len(health.History)-1].Delay
 		delay = &value
 	}
-	return health.Alive, delay, stats.P95LatencyMS
+	return health.Alive, delay, stats.P95TTFTMS
 }
 
 func publicIPUniqueForUnit(snapshot map[string]syncedRouteSlot, ids []string) bool {

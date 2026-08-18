@@ -39,7 +39,6 @@ type transportStats struct {
 	Requests          int64
 	Failed            int64
 	TTFTMsTotal       int64
-	LatencyMsTotal    int64
 	GenerationMsTotal int64
 	OutputTokens      int64
 	LastAt            time.Time
@@ -60,9 +59,6 @@ func (s *transportStats) add(record usageRecord) {
 	}
 	latencyMs := record.Latency.Milliseconds()
 	ttftMs := record.TTFT.Milliseconds()
-	if latencyMs > 0 {
-		s.LatencyMsTotal += latencyMs
-	}
 	if ttftMs > 0 {
 		s.TTFTMsTotal += ttftMs
 	}
@@ -80,10 +76,8 @@ type transportSummary struct {
 	Failed              int64            `json:"failed"`
 	FailureRate         float64          `json:"failure_rate"`
 	TTFTMsTotal         int64            `json:"ttft_ms_total"`
-	LatencyMsTotal      int64            `json:"latency_ms_total"`
 	GenerationMsTotal   int64            `json:"generation_ms_total"`
 	AverageTTFTMs       *float64         `json:"average_ttft_ms,omitempty"`
-	AverageLatencyMs    *float64         `json:"average_latency_ms,omitempty"`
 	AverageGenerationMs *float64         `json:"average_generation_ms,omitempty"`
 	OutputTokens        int64            `json:"output_tokens"`
 	GenerationTokensPS  *float64         `json:"generation_tokens_per_second,omitempty"`
@@ -94,7 +88,7 @@ type transportSummary struct {
 func (s transportStats) summary() transportSummary {
 	result := transportSummary{
 		Requests: s.Requests, Failed: s.Failed, OutputTokens: s.OutputTokens,
-		TTFTMsTotal: s.TTFTMsTotal, LatencyMsTotal: s.LatencyMsTotal, GenerationMsTotal: s.GenerationMsTotal,
+		TTFTMsTotal: s.TTFTMsTotal, GenerationMsTotal: s.GenerationMsTotal,
 	}
 	if s.Requests > 0 {
 		result.FailureRate = float64(s.Failed) / float64(s.Requests)
@@ -102,10 +96,6 @@ func (s transportStats) summary() transportSummary {
 	if s.TTFTMsTotal > 0 {
 		value := float64(s.TTFTMsTotal) / float64(s.Requests)
 		result.AverageTTFTMs = &value
-	}
-	if s.LatencyMsTotal > 0 {
-		value := float64(s.LatencyMsTotal) / float64(s.Requests)
-		result.AverageLatencyMs = &value
 	}
 	if s.GenerationMsTotal > 0 {
 		value := float64(s.GenerationMsTotal) / float64(s.Requests)
