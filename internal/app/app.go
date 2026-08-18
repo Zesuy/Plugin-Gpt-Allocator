@@ -393,11 +393,14 @@ func (a *App) handleManagement(raw []byte) (json.RawMessage, error) {
 }
 
 func (a *App) getState() (managementResponse, error) {
-	value, err := a.store.Load()
+	value, syncInfo, err := a.stateWithCredentialStatusSync()
 	if err != nil {
 		return managementResponse{}, err
 	}
-	return jsonResponse(http.StatusOK, value.Public()), nil
+	return jsonResponse(http.StatusOK, stateResult{
+		PublicState:          value.Public(),
+		CredentialStatusSync: syncInfo,
+	}), nil
 }
 
 func (a *App) putSettings(body []byte) (managementResponse, error) {
