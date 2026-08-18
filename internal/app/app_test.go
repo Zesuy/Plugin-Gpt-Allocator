@@ -18,7 +18,8 @@ type fakeHost struct{}
 func (fakeHost) Call(string, any) (json.RawMessage, error) { return json.RawMessage(`{}`), nil }
 
 type recordingHost struct {
-	saved map[string]map[string]any
+	saved       map[string]map[string]any
+	httpRequest map[string]any
 }
 
 type quotaHost struct {
@@ -59,6 +60,7 @@ func (h *recordingHost) Call(method string, payload any) (json.RawMessage, error
 		h.saved[name] = auth
 		return json.Marshal(map[string]any{"name": name, "path": "/auth/" + name})
 	case "host.http.do":
+		h.httpRequest = payload.(map[string]any)
 		return json.Marshal(map[string]any{"StatusCode": http.StatusNoContent})
 	default:
 		return json.RawMessage(`{}`), nil
@@ -749,6 +751,46 @@ func TestManagementCRUDAndAdoptLocalCredential(t *testing.T) {
 	response = callManagement(t, application, http.MethodDelete, managementPrefix+"/route-slots", map[string]any{"id": "local-slot"})
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("delete route slot status = %d body=%s", response.StatusCode, response.Body)
+	}
+}
+
+func TestUnmanageCredentialCanDeleteCPAAuth(t *testing.T) {
+	store := state.New(filepath.Join(t.TempDir(), "state.json"))
+	host := newRecordingHost()
+	host.saved["expired.json"] = map[string]any{
+		"type": "codex", "access_token": "expired-token", "email": "expired@example.com",
+	}
+	if _, err := store.Update(func(value *model.State) error {
+		value.Credentials = []model.Credential{{
+			Identity: "expired@example.com", AuthFile: "expired.json", Email: "expired@example.com",
+		}}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	application := New(store, host)
+	response := callManagementWithHeaders(t, application, http.MethodDelete, managementPrefix+"/credentials/managed", map[string]any{
+		"identity": "expired@example.com", "delete_cpa": true,
+	}, http.Header{
+		"Authorization":                []string{"Bearer management-key"},
+		"X-CPA-Route-Allocator-Origin": []string{"http://192.168.5.220:8317"},
+	})
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("delete CPA credential status = %d body=%s", response.StatusCode, response.Body)
+	}
+	if host.httpRequest == nil || host.httpRequest["method"] != http.MethodDelete || host.httpRequest["url"] != "http://192.168.5.220:8317/v0/management/auth-files" {
+		t.Fatalf("unexpected CPA delete request: %#v", host.httpRequest)
+	}
+	body, ok := host.httpRequest["body"].([]byte)
+	if !ok || string(body) != `{"names":["expired.json"]}` {
+		t.Fatalf("unexpected CPA delete body: %q", body)
+	}
+	loaded, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(loaded.Credentials) != 0 {
+		t.Fatalf("credential remained managed after CPA deletion: %#v", loaded.Credentials)
 	}
 }
 

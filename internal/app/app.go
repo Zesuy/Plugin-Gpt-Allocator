@@ -205,7 +205,8 @@ type adoptCredentialInput struct {
 }
 
 type unmanageCredentialInput struct {
-	Identity string `json:"identity"`
+	Identity  string `json:"identity"`
+	DeleteCPA bool   `json:"delete_cpa,omitempty"`
 }
 
 type credentialStatusInput struct {
@@ -381,7 +382,7 @@ func (a *App) handleManagement(raw []byte) (json.RawMessage, error) {
 	case req.Method == http.MethodPost && path == managementPrefix+"/credentials/adopt":
 		response, err = a.adoptLocalCredential(req.Body)
 	case req.Method == http.MethodDelete && path == managementPrefix+"/credentials/managed":
-		response, err = a.unmanageCredential(req.Body)
+		response, err = a.unmanageCredential(req.Body, req.Headers)
 	case req.Method == http.MethodPost && path == managementPrefix+"/import/preview":
 		response, err = a.previewImport(req.Body)
 	case req.Method == http.MethodPost && path == managementPrefix+"/upload":

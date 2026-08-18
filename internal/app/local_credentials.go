@@ -2,6 +2,7 @@ package app
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"sort"
 	"strings"
@@ -169,7 +170,7 @@ func (a *App) adoptLocalCredential(body []byte) (managementResponse, error) {
 	}), nil
 }
 
-func (a *App) unmanageCredential(body []byte) (managementResponse, error) {
+func (a *App) unmanageCredential(body []byte, requestHeaders http.Header) (managementResponse, error) {
 	var input unmanageCredentialInput
 	if err := decodeBody(body, &input); err != nil {
 		return managementResponse{}, err
@@ -201,16 +202,24 @@ func (a *App) unmanageCredential(body []byte) (managementResponse, error) {
 	for _, file := range files {
 		byName[strings.ToLower(file.Name)] = file
 	}
-	auth, err := a.readExistingAuth(credential.AuthFile, byName)
-	if err != nil {
-		return managementResponse{}, upstreamError("read CPA Auth " + credential.AuthFile + ": " + err.Error())
-	}
-	if auth != nil {
-		delete(auth, "allocator_identity")
-		delete(auth, "allocator_group")
-		delete(auth, "proxy_url")
-		if err := a.saveHostAuth(credential.AuthFile, auth); err != nil {
-			return managementResponse{}, upstreamError("save CPA Auth " + credential.AuthFile + ": " + err.Error())
+	if input.DeleteCPA {
+		if _, exists := byName[strings.ToLower(strings.TrimSpace(credential.AuthFile))]; exists {
+			if err := a.deleteCPAAuth(credential.AuthFile, requestHeaders); err != nil {
+				return managementResponse{}, err
+			}
+		}
+	} else {
+		auth, err := a.readExistingAuth(credential.AuthFile, byName)
+		if err != nil {
+			return managementResponse{}, upstreamError("read CPA Auth " + credential.AuthFile + ": " + err.Error())
+		}
+		if auth != nil {
+			delete(auth, "allocator_identity")
+			delete(auth, "allocator_group")
+			delete(auth, "proxy_url")
+			if err := a.saveHostAuth(credential.AuthFile, auth); err != nil {
+				return managementResponse{}, upstreamError("save CPA Auth " + credential.AuthFile + ": " + err.Error())
+			}
 		}
 	}
 	updated, err := a.store.Update(func(state *model.State) error {
@@ -226,6 +235,47 @@ func (a *App) unmanageCredential(body []byte) (managementResponse, error) {
 		return managementResponse{}, err
 	}
 	return jsonResponse(http.StatusOK, updated.Public()), nil
+}
+
+func (a *App) deleteCPAAuth(name string, requestHeaders http.Header) error {
+	authorization := strings.TrimSpace(requestHeaders.Get("Authorization"))
+	if authorization == "" {
+		return clientError("management authorization is required to delete CPA Auth")
+	}
+	body, err := json.Marshal(map[string]any{"names": []string{strings.TrimSpace(name)}})
+	if err != nil {
+		return err
+	}
+	raw, err := a.host.Call("host.http.do", map[string]any{
+		"method": http.MethodDelete,
+		"url":    cpaManagementBaseURL(requestHeaders) + "/v0/management/auth-files",
+		"headers": http.Header{
+			"Authorization": []string{authorization},
+			"Content-Type":  []string{"application/json"},
+		},
+		"body": body,
+	})
+	if err != nil {
+		return upstreamError("delete CPA Auth: " + err.Error())
+	}
+	var hostResult hostHTTPResponse
+	if err := json.Unmarshal(raw, &hostResult); err != nil {
+		return upstreamError("decode CPA Auth delete response: " + err.Error())
+	}
+	if hostResult.StatusCode < 200 || hostResult.StatusCode >= 300 {
+		detail := ""
+		var apiError struct {
+			Error string `json:"error"`
+		}
+		if json.Unmarshal(hostResult.Body, &apiError) == nil {
+			detail = strings.TrimSpace(apiError.Error)
+		}
+		if detail != "" {
+			return upstreamError(fmt.Sprintf("CPA Auth delete returned HTTP %d: %s", hostResult.StatusCode, detail))
+		}
+		return upstreamError(fmt.Sprintf("CPA Auth delete returned HTTP %d", hostResult.StatusCode))
+	}
+	return nil
 }
 
 func (a *App) readHostAuthByIndex(authIndex string) (hostAuthGetResponse, error) {
