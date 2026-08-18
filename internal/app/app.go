@@ -12,19 +12,21 @@ import (
 	"sync"
 	"time"
 
-	"github.com/zesuy/cpa-route-allocator/internal/allocator"
-	"github.com/zesuy/cpa-route-allocator/internal/importer"
-	"github.com/zesuy/cpa-route-allocator/internal/mihomo"
-	"github.com/zesuy/cpa-route-allocator/internal/model"
-	"github.com/zesuy/cpa-route-allocator/internal/state"
-	"github.com/zesuy/cpa-route-allocator/internal/ui"
+	"github.com/Zesuy/Plugin-Gpt-Allocator/internal/allocator"
+	"github.com/Zesuy/Plugin-Gpt-Allocator/internal/importer"
+	"github.com/Zesuy/Plugin-Gpt-Allocator/internal/mihomo"
+	"github.com/Zesuy/Plugin-Gpt-Allocator/internal/model"
+	"github.com/Zesuy/Plugin-Gpt-Allocator/internal/state"
+	"github.com/Zesuy/Plugin-Gpt-Allocator/internal/ui"
 )
 
 const (
 	PluginName    = "cpa-route-allocator"
-	PluginVersion = "0.1.0-dev"
 	SchemaVersion = 3
 )
+
+// PluginVersion is overridden by release builds through -ldflags -X.
+var PluginVersion = "0.1.0-dev"
 
 const managementPrefix = "/v0/management/plugins/" + PluginName
 
@@ -251,8 +253,8 @@ func pluginRegistration() registration {
 		Metadata: metadata{
 			Name:             PluginName,
 			Version:          PluginVersion,
-			Author:           "zesuy",
-			GitHubRepository: "https://github.com/zesuy/cpa-route-allocator",
+			Author:           "Zesuy",
+			GitHubRepository: "https://github.com/Zesuy/Plugin-Gpt-Allocator",
 			ConfigFields:     []configField{},
 		},
 		Capabilities: registrationCapabilities{ManagementAPI: true, UsagePlugin: true},

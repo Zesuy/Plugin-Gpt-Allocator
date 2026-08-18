@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/zesuy/cpa-route-allocator/internal/model"
+	"github.com/Zesuy/Plugin-Gpt-Allocator/internal/model"
 )
 
 type groupMutationInput struct {

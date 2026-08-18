@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/zesuy/cpa-route-allocator/internal/model"
-	"github.com/zesuy/cpa-route-allocator/internal/state"
+	"github.com/Zesuy/Plugin-Gpt-Allocator/internal/model"
+	"github.com/Zesuy/Plugin-Gpt-Allocator/internal/state"
 )
 
 type credentialSyncHost struct {

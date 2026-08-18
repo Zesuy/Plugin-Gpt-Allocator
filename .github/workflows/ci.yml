@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Go and UI checks
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22.x"
+          cache: true
+      - name: Unit tests
+        run: go test ./...
+      - name: Race tests
+        run: go test -race ./...
+      - name: Vet
+        run: go vet ./...
+      - name: Embedded UI syntax
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const source = fs.readFileSync('internal/ui/index.html', 'utf8');
+          for (const block of source.matchAll(/<script>([\s\S]*?)<\/script>/g)) {
+            new Function(block[1]);
+          }
+          console.log('JavaScript syntax OK');
+          NODE
+
+  package:
+    name: Linux amd64 package
+    needs: checks
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and verify package
+        shell: bash
+        env:
+          GO_VERSION: "1.22.12"
+          VERSION: "0.1.0"
+          TARGET_GOOS: linux
+          TARGET_GOARCH: amd64
+          DIST_DIR: dist
+        run: ./scripts/ci-package.sh
+      - name: Upload package smoke artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: plugin-gpt-allocator-linux-amd64
+          path: dist/*
+          if-no-files-found: error

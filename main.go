@@ -63,8 +63,8 @@ import (
 	"sync"
 	"unsafe"
 
-	allocatorapp "github.com/zesuy/cpa-route-allocator/internal/app"
-	"github.com/zesuy/cpa-route-allocator/internal/state"
+	allocatorapp "github.com/Zesuy/Plugin-Gpt-Allocator/internal/app"
+	"github.com/Zesuy/Plugin-Gpt-Allocator/internal/state"
 )
 
 const abiVersion uint32 = 1

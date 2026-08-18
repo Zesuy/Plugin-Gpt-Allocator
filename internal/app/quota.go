@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/zesuy/cpa-route-allocator/internal/model"
+	"github.com/Zesuy/Plugin-Gpt-Allocator/internal/model"
 )
 
 const codexQuotaURL = "https://chatgpt.com/backend-api/wham/usage"

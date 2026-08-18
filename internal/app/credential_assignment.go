@@ -4,8 +4,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/zesuy/cpa-route-allocator/internal/allocator"
-	"github.com/zesuy/cpa-route-allocator/internal/model"
+	"github.com/Zesuy/Plugin-Gpt-Allocator/internal/allocator"
+	"github.com/Zesuy/Plugin-Gpt-Allocator/internal/model"
 )
 
 // assignManagedCredential recalculates one credential's route using the target

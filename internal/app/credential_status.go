@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/zesuy/cpa-route-allocator/internal/model"
+	"github.com/Zesuy/Plugin-Gpt-Allocator/internal/model"
 )
 
 // CPA_ROUTE_ALLOCATOR_CPA_URL is optional; the default matches CPA's usual

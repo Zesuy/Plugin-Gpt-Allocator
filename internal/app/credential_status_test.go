@@ -3,7 +3,7 @@ package app
 import (
 	"testing"
 
-	"github.com/zesuy/cpa-route-allocator/internal/model"
+	"github.com/Zesuy/Plugin-Gpt-Allocator/internal/model"
 )
 
 func TestFindCredentialRouteConflictOnlyCountsEnabledPeers(t *testing.T) {

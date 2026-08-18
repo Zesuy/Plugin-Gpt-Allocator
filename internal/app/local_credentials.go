@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/zesuy/cpa-route-allocator/internal/allocator"
-	"github.com/zesuy/cpa-route-allocator/internal/importer"
-	"github.com/zesuy/cpa-route-allocator/internal/model"
+	"github.com/Zesuy/Plugin-Gpt-Allocator/internal/allocator"
+	"github.com/Zesuy/Plugin-Gpt-Allocator/internal/importer"
+	"github.com/Zesuy/Plugin-Gpt-Allocator/internal/model"
 )
 
 type localCredentialItem struct {

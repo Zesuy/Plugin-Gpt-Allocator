@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zesuy/cpa-route-allocator/internal/mihomo"
+	"github.com/Zesuy/Plugin-Gpt-Allocator/internal/mihomo"
 )
 
 func TestBuildDeduplicatePreviewKeepsOneAndMovesOnlyRemainingListeners(t *testing.T) {

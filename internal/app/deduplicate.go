@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/zesuy/cpa-route-allocator/internal/mihomo"
+	"github.com/Zesuy/Plugin-Gpt-Allocator/internal/mihomo"
 )
 
 type deduplicateInput struct {

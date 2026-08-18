@@ -1,23 +1,25 @@
 PLUGIN_NAME := cpa-route-allocator
-GOOS ?= linux
-GOARCH ?= amd64
-EXT := .so
+PLUGIN_VERSION ?= 0.1.0-dev
 
-ifeq ($(GOOS),darwin)
-EXT := .dylib
-endif
-ifeq ($(GOOS),windows)
-EXT := .dll
-endif
+.PHONY: test race vet build package clean
 
-.PHONY: build test clean
+test:
+	GOTOOLCHAIN=auto go test ./...
+
+race:
+	GOTOOLCHAIN=auto go test -race ./...
+
+vet:
+	GOTOOLCHAIN=auto go vet ./...
 
 build:
 	mkdir -p dist
-	CGO_ENABLED=1 GOOS=$(GOOS) GOARCH=$(GOARCH) go build -buildmode=c-shared -trimpath -o dist/$(PLUGIN_NAME)$(EXT) .
+	CGO_ENABLED=1 GOTOOLCHAIN=auto go build -buildmode=c-shared -trimpath \
+		-ldflags="-s -w -X github.com/Zesuy/Plugin-Gpt-Allocator/internal/app.PluginVersion=$(PLUGIN_VERSION)" \
+		-o dist/$(PLUGIN_NAME).so .
 
-test:
-	go test ./...
+package:
+	VERSION=$(PLUGIN_VERSION) ./scripts/package.sh
 
 clean:
 	rm -f dist/$(PLUGIN_NAME).so dist/$(PLUGIN_NAME).dylib dist/$(PLUGIN_NAME).dll dist/$(PLUGIN_NAME).h
