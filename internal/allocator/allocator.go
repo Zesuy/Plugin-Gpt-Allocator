@@ -18,13 +18,6 @@ type Assignment struct {
 }
 
 func Assign(value *model.State, group model.Group, now time.Time) (Assignment, error) {
-	return AssignExcluding(value, group, now, "")
-}
-
-// AssignExcluding applies the normal group policy while omitting one Listener.
-// It is used for explicit proxy rotation, where selecting the current Listener
-// again would make a successful response misleading.
-func AssignExcluding(value *model.State, group model.Group, now time.Time, excludedSlotID string) (Assignment, error) {
 	usage := make(map[string]int)
 	for _, credential := range value.Credentials {
 		// Disabled credentials do not consume an active Listener. This lets a
@@ -40,7 +33,7 @@ func AssignExcluding(value *model.State, group model.Group, now time.Time, exclu
 	}
 	var candidates []candidate
 	for index, slot := range value.RouteSlots {
-		if (strings.TrimSpace(excludedSlotID) == "" || !strings.EqualFold(slot.ID, excludedSlotID)) && strings.EqualFold(slot.Pool, group.ListenerPool) {
+		if strings.EqualFold(slot.Pool, group.ListenerPool) {
 			candidates = append(candidates, candidate{index: index, uses: usage[slot.ID]})
 		}
 	}

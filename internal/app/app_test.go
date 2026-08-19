@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/Zesuy/Plugin-Gpt-Allocator/internal/model"
 	"github.com/Zesuy/Plugin-Gpt-Allocator/internal/state"
@@ -604,63 +603,6 @@ func TestPrepareNewRouteInheritsSelectorNodeWithoutSwitching(t *testing.T) {
 	}
 	if got := value.RouteSlots[0].CurrentNode; got != "node-a" {
 		t.Fatalf("inherited current node = %q, want node-a", got)
-	}
-}
-
-func TestRotateCredentialExcludesCurrentListener(t *testing.T) {
-	putCalls := 0
-	mihomoServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if request.Method == http.MethodGet && request.URL.Path == "/proxies/next-selector" {
-			_, _ = writer.Write([]byte(`{"name":"next-selector","type":"Selector","now":"node-b","all":["node-a","node-b"]}`))
-			return
-		}
-		if request.Method == http.MethodPut {
-			putCalls++
-			writer.WriteHeader(http.StatusNoContent)
-			return
-		}
-		http.NotFound(writer, request)
-	}))
-	defer mihomoServer.Close()
-
-	store := state.New(filepath.Join(t.TempDir(), "state.json"))
-	host := newRecordingHost()
-	host.saved["rotate.json"] = map[string]any{
-		"type": "codex", "access_token": "token", "email": "rotate@example.com",
-	}
-	if _, err := store.Update(func(value *model.State) error {
-		value.Settings.MihomoControllerURL = mihomoServer.URL
-		value.Groups = []model.Group{{Name: "boom", ListenerPool: "default", ShortagePolicy: model.ShortageReject}}
-		value.RouteSlots = []model.RouteSlot{
-			{ID: "current", Pool: "default", ListenerURL: "socks5://127.0.0.1:1", Selector: "current-selector"},
-			{ID: "next", Pool: "default", ListenerURL: "socks5://127.0.0.1:2", Selector: "next-selector", LastAssignedAt: time.Now().UTC()},
-		}
-		value.Credentials = []model.Credential{{
-			Identity: "rotate@example.com", AuthFile: "rotate.json", Email: "rotate@example.com", Group: "boom", RouteSlotID: "current", RouteStatus: model.RouteStatusAssigned,
-		}}
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	response := callManagement(t, New(store, host), http.MethodPost, managementPrefix+"/credentials/reassign", map[string]any{
-		"identity": "rotate@example.com", "rotate": true,
-	})
-	if response.StatusCode != http.StatusOK {
-		t.Fatalf("rotate credential status = %d body=%s", response.StatusCode, response.Body)
-	}
-	loaded, err := store.Load()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := loaded.Credentials[0].RouteSlotID; got != "next" {
-		t.Fatalf("rotated Listener = %q, want next", got)
-	}
-	if got := host.saved["rotate.json"]["proxy_url"]; got != "socks5://127.0.0.1:2" {
-		t.Fatalf("rotated CPA proxy_url = %#v", got)
-	}
-	if putCalls != 0 {
-		t.Fatalf("rotation switched Mihomo node %d times", putCalls)
 	}
 }
 
