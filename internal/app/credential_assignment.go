@@ -12,7 +12,7 @@ import (
 // group's shortage policy. The credential's previous assignment is removed
 // from the working copy before allocation so reassignment does not count its
 // own old Listener as occupied.
-func (a *App) assignManagedCredential(identity, groupName string) (model.State, error) {
+func (a *App) assignManagedCredential(identity, groupName string, rotate bool) (model.State, error) {
 	current, err := a.store.Load()
 	if err != nil {
 		return model.State{}, err
@@ -54,7 +54,11 @@ func (a *App) assignManagedCredential(identity, groupName string) (model.State, 
 	credential.RouteSlotID = ""
 	credential.RouteStatus = ""
 	now := time.Now().UTC()
-	assignment, err := allocator.Assign(&working, targetGroup, now)
+	excludedSlotID := ""
+	if rotate {
+		excludedSlotID = original.RouteSlotID
+	}
+	assignment, err := allocator.AssignExcluding(&working, targetGroup, now, excludedSlotID)
 	if err != nil {
 		return model.State{}, conflictError(err.Error())
 	}

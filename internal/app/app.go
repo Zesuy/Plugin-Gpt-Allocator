@@ -197,6 +197,7 @@ type moveCredentialInput struct {
 
 type reassignCredentialInput struct {
 	Identity string `json:"identity"`
+	Rotate   bool   `json:"rotate,omitempty"`
 }
 
 type adoptCredentialInput struct {
@@ -757,7 +758,7 @@ func (a *App) moveCredential(body []byte) (managementResponse, error) {
 	if input.Identity == "" || input.Group == "" {
 		return managementResponse{}, clientError("identity and group are required")
 	}
-	updated, err := a.assignManagedCredential(input.Identity, input.Group)
+	updated, err := a.assignManagedCredential(input.Identity, input.Group, false)
 	if err != nil {
 		return managementResponse{}, err
 	}
@@ -787,7 +788,7 @@ func (a *App) reassignCredential(body []byte) (managementResponse, error) {
 	if group == "" {
 		return managementResponse{}, clientError("credential does not exist")
 	}
-	updated, err := a.assignManagedCredential(input.Identity, group)
+	updated, err := a.assignManagedCredential(input.Identity, group, input.Rotate)
 	if err != nil {
 		return managementResponse{}, err
 	}

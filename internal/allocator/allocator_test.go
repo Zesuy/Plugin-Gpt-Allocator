@@ -65,6 +65,22 @@ func TestAssignTreatsDisabledCredentialsAsFreeCapacity(t *testing.T) {
 	}
 }
 
+func TestAssignExcludingRotatesAwayFromCurrentSlot(t *testing.T) {
+	now := time.Now().UTC()
+	value := model.NewState()
+	value.RouteSlots = []model.RouteSlot{
+		{ID: "current", Pool: "default", ListenerURL: "socks5://127.0.0.1:1"},
+		{ID: "next", Pool: "default", ListenerURL: "socks5://127.0.0.1:2", LastAssignedAt: now},
+	}
+	got, err := AssignExcluding(&value, model.Group{ListenerPool: "default", ShortagePolicy: model.ShortageReject}, now, "current")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.RouteSlotID != "next" || got.RouteStatus != model.RouteStatusAssigned {
+		t.Fatalf("rotation selected unexpected Listener: %#v", got)
+	}
+}
+
 func TestAssignHonorsDefaultAndRejectPolicies(t *testing.T) {
 	value := model.NewState()
 	defaultRoute, err := Assign(&value, model.Group{ListenerPool: "missing", ShortagePolicy: model.ShortageDefault}, time.Now())

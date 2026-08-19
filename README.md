@@ -45,6 +45,7 @@ CLIProxyAPI 可以保存多份 Codex 凭据，但当凭据需要按账号组使�
 | **已有凭据接管** | 发现 CPA 本地 Auth 文件并选择分组接管；凭据编辑中可取消跟踪并保留 Auth，或确认后直接从 CPA 移除 |
 | **CPA 状态同步** | 页面开关通过 CPA Management API 启用或停用凭据；打开页面和手动同步时以 CPA 的真实 `disabled` 状态为准 |
 | **CPA 运行告警** | 直接读取 CPA 根据真实模型请求维护的 `status`、`status_message` 和 `unavailable`，在凭据卡片显示工作区停用、登录失效等原因 |
+| **代理轮转** | 凭据卡片可一键排除当前 Listener 并重新分配；无其他空闲出口时遵循所在分组的不足策略 |
 | **分组策略** | 每组独立配置 Priority、WebSocket、Listener Pool 和出口不足策略；支持拖动调整分组顺序 |
 | **Listener 管理** | 新建、复制、编辑和删除 Listener / Selector 映射；Selector 名称直接从 Mihomo 读取 |
 | **出口诊断** | 通过每个 Listener 请求 `chatgpt.com/cdn-cgi/trace`，显示当前公网 IP 和首字节延迟 |
